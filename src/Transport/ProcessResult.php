@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge\Transport;
+namespace Lfcheng\PrintDispatch\Transport;
 
-use Lfcheng\PrintBridge\FailureCode;
+use Lfcheng\PrintDispatch\FailureCode;
 
 final readonly class ProcessResult
 {

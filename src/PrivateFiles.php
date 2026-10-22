@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge;
+namespace Lfcheng\PrintDispatch;
 
-use Lfcheng\PrintBridge\Exception\BridgeException;
+use Lfcheng\PrintDispatch\Exception\BridgeException;
 
 /** Local, same-user storage only. Parent directories must be trusted. */
 final class PrivateFiles

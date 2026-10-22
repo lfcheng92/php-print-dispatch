@@ -3,23 +3,23 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-use Lfcheng\PrintBridge\AuditLogger;
-use Lfcheng\PrintBridge\Claim;
-use Lfcheng\PrintBridge\Clock;
-use Lfcheng\PrintBridge\Exception\BridgeException;
-use Lfcheng\PrintBridge\Exception\IdempotencyConflict;
-use Lfcheng\PrintBridge\Exception\LeaseLost;
-use Lfcheng\PrintBridge\FailureCode;
-use Lfcheng\PrintBridge\PrintRequest;
-use Lfcheng\PrintBridge\Queue;
-use Lfcheng\PrintBridge\Status;
-use Lfcheng\PrintBridge\Transport\CupsTransport;
-use Lfcheng\PrintBridge\Transport\FakeTransport;
-use Lfcheng\PrintBridge\Transport\ProcessRunner;
-use Lfcheng\PrintBridge\Transport\Submission;
-use Lfcheng\PrintBridge\Transport\Transport;
-use Lfcheng\PrintBridge\Transport\TransportResult;
-use Lfcheng\PrintBridge\Worker;
+use Lfcheng\PrintDispatch\AuditLogger;
+use Lfcheng\PrintDispatch\Claim;
+use Lfcheng\PrintDispatch\Clock;
+use Lfcheng\PrintDispatch\Exception\BridgeException;
+use Lfcheng\PrintDispatch\Exception\IdempotencyConflict;
+use Lfcheng\PrintDispatch\Exception\LeaseLost;
+use Lfcheng\PrintDispatch\FailureCode;
+use Lfcheng\PrintDispatch\PrintRequest;
+use Lfcheng\PrintDispatch\Queue;
+use Lfcheng\PrintDispatch\Status;
+use Lfcheng\PrintDispatch\Transport\CupsTransport;
+use Lfcheng\PrintDispatch\Transport\FakeTransport;
+use Lfcheng\PrintDispatch\Transport\ProcessRunner;
+use Lfcheng\PrintDispatch\Transport\Submission;
+use Lfcheng\PrintDispatch\Transport\Transport;
+use Lfcheng\PrintDispatch\Transport\TransportResult;
+use Lfcheng\PrintDispatch\Worker;
 
 final class TestClock implements Clock
 {
@@ -36,7 +36,7 @@ final class Suite
 
     public function __construct()
     {
-        $this->base = sys_get_temp_dir() . '/print-bridge-tests-' . bin2hex(random_bytes(8));
+        $this->base = sys_get_temp_dir() . '/print-dispatch-tests-' . bin2hex(random_bytes(8));
         mkdir($this->base, 0700);
     }
 
@@ -337,14 +337,14 @@ $s->test('worker requires bounded transport and sufficient lease', function () u
 });
 $s->test('CUPS isolated command argv and locale match expected values', function () use ($s): void {
     $capture = $s->path();
-    $lp = $s->script('file_put_contents(' . var_export($capture, true) . ', json_encode([$argv, getenv("LC_ALL"), getenv("PRINT_BRIDGE_TEST_SECRET")], JSON_THROW_ON_ERROR)); echo "request id is demo-42 (1 file(s))\\n";');
-    putenv('PRINT_BRIDGE_TEST_SECRET=SYNTHETIC_PARENT_SECRET');
+    $lp = $s->script('file_put_contents(' . var_export($capture, true) . ', json_encode([$argv, getenv("LC_ALL"), getenv("PRINT_DISPATCH_TEST_SECRET")], JSON_THROW_ON_ERROR)); echo "request id is demo-42 (1 file(s))\\n";');
+    putenv('PRINT_DISPATCH_TEST_SECRET=SYNTHETIC_PARENT_SECRET');
     $q = $s->queue(); $job = $q->enqueue('cups', request(copies: 2));
     $result = (new Worker($q, new CupsTransport(['demo'], $lp)))->runOnce();
-    putenv('PRINT_BRIDGE_TEST_SECRET');
+    putenv('PRINT_DISPATCH_TEST_SECRET');
     $s->same(Status::Submitted, $result->status); $s->same('demo-42', $result->systemJobId);
     [$args, $locale, $secret] = json_decode(file_get_contents($capture), true, flags: JSON_THROW_ON_ERROR);
-    $s->same([$lp, '-h', 'localhost:631', '-d', 'demo', '-n', '2', '-t', 'print-bridge:' . $job->id,
+    $s->same([$lp, '-h', 'localhost:631', '-d', 'demo', '-n', '2', '-t', 'print-dispatch:' . $job->id,
         '-o', 'document-format=text/plain', '--', $q->documentPath($job)], $args);
     $s->same('C', $locale); $s->same(false, $secret);
 });
@@ -402,7 +402,7 @@ $s->test('process runner validates NUL, timeout and executable', function () use
     $s->same(false, $runner->run(['php'], 1)->started);
 });
 $s->test('CLI separate-process submit, dedupe, status and fake work integration', function () use ($s): void {
-    $root = $s->path(); $bin = dirname(__DIR__) . '/bin/print-bridge';
+    $root = $s->path(); $bin = dirname(__DIR__) . '/bin/print-dispatch';
     $submit = [PHP_BINARY, $bin, 'submit', '--state', $root, '--key', 'cli-one', '--printer', 'demo', '--mime', 'text/plain'];
     [$exit, $out, $err] = $s->command($submit, "Synthetic CLI\n"); $s->same(0, $exit); $s->same('', $err);
     $job = json_decode($out, true, flags: JSON_THROW_ON_ERROR); $s->same('received', $job['status']);
@@ -415,7 +415,7 @@ $s->test('CLI separate-process submit, dedupe, status and fake work integration'
     $s->same(0, $exit); $s->same('idle', json_decode($out, true)['state']);
 });
 $s->test('CLI rejects malformed options, files, URLs, conflicts and missing allowlist', function () use ($s): void {
-    $root = $s->path(); $bin = dirname(__DIR__) . '/bin/print-bridge';
+    $root = $s->path(); $bin = dirname(__DIR__) . '/bin/print-dispatch';
     foreach ([['status','--id','../secret'], ['submit','--file','/etc/passwd'], ['submit','--url','https://example.invalid'],
         ['work','--transport','cups'], ['work','--once','--once'], ['work','--transport','fake','--max-jobs','-1'], ['bogus']] as $args) {
         [$exit, $out, $err] = $s->command([PHP_BINARY, $bin, ...$args, '--state', $root]);
@@ -428,7 +428,7 @@ $s->test('CLI rejects malformed options, files, URLs, conflicts and missing allo
 $s->test('CLI CUPS uncertainty has dedicated exit code without raw command output', function () use ($s): void {
     $root = $s->path(); $q = new Queue($root); $q->enqueue('cli-unknown', request());
     $lp = $s->script('fwrite(STDERR, "SYNTHETIC_SECRET"); exit(1);');
-    [$exit, $out, $err] = $s->command([PHP_BINARY, dirname(__DIR__) . '/bin/print-bridge', 'work', '--state', $root,
+    [$exit, $out, $err] = $s->command([PHP_BINARY, dirname(__DIR__) . '/bin/print-dispatch', 'work', '--state', $root,
         '--once', '--transport', 'cups', '--printers', 'demo', '--lp', $lp]);
     $s->same(3, $exit); $s->same('unknown', json_decode($out, true)['status']); $s->same('', $err);
     $s->truth(!str_contains($out, 'SYNTHETIC_SECRET'));
@@ -438,7 +438,7 @@ $s->test('real subprocess death before and after submission marker recovers cons
         $root = $s->path(); $clock = new TestClock(time()); $q = new Queue($root, clock: $clock);
         $job = $q->enqueue('crash', request());
         $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
-            . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root, true) . '); $c=$q->claim(5);'
+            . '$q=new \\Lfcheng\\PrintDispatch\\Queue(' . var_export($root, true) . '); $c=$q->claim(5);'
             . ($afterMarker ? '$q->beginSubmission($c,5);' : '') . 'echo "READY\\n"; fflush(STDOUT); sleep(30);');
         $process = proc_open([PHP_BINARY, $script], [1 => ['pipe','w'],2 => ['pipe','w']], $pipes);
         stream_set_timeout($pipes[1], 5); $s->same("READY\n", fgets($pipes[1]));
@@ -451,8 +451,8 @@ $s->test('real subprocess death before and after submission marker recovers cons
 $s->test('concurrent producers share one idempotent durable job', function () use ($s): void {
     $root = $s->path(); new Queue($root);
     $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
-        . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root, true) . ');'
-        . 'echo $q->enqueue("race",new \\Lfcheng\\PrintBridge\\PrintRequest("demo","synthetic","text/plain"))->id;');
+        . '$q=new \\Lfcheng\\PrintDispatch\\Queue(' . var_export($root, true) . ');'
+        . 'echo $q->enqueue("race",new \\Lfcheng\\PrintDispatch\\PrintRequest("demo","synthetic","text/plain"))->id;');
     $children = [];
     for ($i=0; $i<4; ++$i) { $p = proc_open([PHP_BINARY,$script],[1=>['pipe','w'],2=>['pipe','w']],$pipes); $children[]=[$p,$pipes]; }
     $ids = [];
@@ -465,8 +465,8 @@ $s->test('concurrent producers share one idempotent durable job', function () us
 $s->test('concurrent workers submit a single queued job only once', function () use ($s): void {
     $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('worker-race', request());
     $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
-        . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root,true) . ');'
-        . '$j=(new \\Lfcheng\\PrintBridge\\Worker($q,new \\Lfcheng\\PrintBridge\\Transport\\FakeTransport()))->runOnce();'
+        . '$q=new \\Lfcheng\\PrintDispatch\\Queue(' . var_export($root,true) . ');'
+        . '$j=(new \\Lfcheng\\PrintDispatch\\Worker($q,new \\Lfcheng\\PrintDispatch\\Transport\\FakeTransport()))->runOnce();'
         . 'echo $j?->id ?? "idle";');
     $children=[]; for ($i=0;$i<4;++$i) { $p=proc_open([PHP_BINARY,$script],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$children[]=[$p,$pipes]; }
     $ids=[]; foreach ($children as [$p,$pipes]) {
@@ -509,8 +509,8 @@ $s->test('concurrent first-open initialization does not overwrite queue state', 
     for ($round = 0; $round < 5; ++$round) {
         $root = $s->path();
         $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
-            . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root,true) . ');'
-            . 'echo $q->enqueue("first-open",new \\Lfcheng\\PrintBridge\\PrintRequest("demo","synthetic","text/plain"))->id;');
+            . '$q=new \\Lfcheng\\PrintDispatch\\Queue(' . var_export($root,true) . ');'
+            . 'echo $q->enqueue("first-open",new \\Lfcheng\\PrintDispatch\\PrintRequest("demo","synthetic","text/plain"))->id;');
         $children=[]; for ($i=0;$i<4;++$i) { $p=proc_open([PHP_BINARY,$script],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$children[]=[$p,$pipes]; }
         $ids=[]; foreach ($children as [$p,$pipes]) {
             $ids[]=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);
@@ -524,7 +524,7 @@ $s->test('CLI requires transport even when CUPS-specific arguments are present',
     $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('explicit-mode', request(printer: 'office'));
     $marker = $s->path();
     $lp = $s->script('file_put_contents(' . var_export($marker, true) . ', "called"); echo "request id is office-1 (1 file(s))\\n";');
-    $bin = dirname(__DIR__) . '/bin/print-bridge';
+    $bin = dirname(__DIR__) . '/bin/print-dispatch';
     foreach ([[], ['--printers','office','--lp',$lp], ['--printers','office','--timeout','1']] as $extra) {
         [$exit,$out,$err] = $s->command([PHP_BINARY,$bin,'work','--state',$root,'--once',...$extra]);
         $s->same(2,$exit); $s->same('',$out); $s->same('invalid_input',json_decode($err,true)['error']);
@@ -536,7 +536,7 @@ $s->test('CLI rejects fake and CUPS-only option mixtures without claiming work',
     $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('mixed-mode', request(printer: 'office'));
     $marker = $s->path(); $lp = $s->script('file_put_contents(' . var_export($marker,true) . ', "called");');
     foreach ([['--lp',$lp], ['--timeout','1'], ['--lp',$lp,'--timeout','1']] as $extra) {
-        [$exit,$out,$err] = $s->command([PHP_BINARY,dirname(__DIR__).'/bin/print-bridge','work','--state',$root,
+        [$exit,$out,$err] = $s->command([PHP_BINARY,dirname(__DIR__).'/bin/print-dispatch','work','--state',$root,
             '--once','--transport','fake','--printers','office',...$extra]);
         $s->same(2,$exit); $s->same('',$out); $s->same('invalid_input',json_decode($err,true)['error']);
         $s->same(Status::Received,$q->get($job->id)->status); $s->same(0,$q->get($job->id)->attempts);
@@ -578,7 +578,7 @@ $s->test('FakeTransport refuses forged submitted outcomes and simulation require
 });
 
 $s->test('CLI reports unavailable arguments without warnings when register_argc_argv is off', function () use ($s): void {
-    [$exit,$out,$err] = $s->command([PHP_BINARY,'-d','register_argc_argv=0',dirname(__DIR__).'/bin/print-bridge','help']);
+    [$exit,$out,$err] = $s->command([PHP_BINARY,'-d','register_argc_argv=0',dirname(__DIR__).'/bin/print-dispatch','help']);
     $s->same(1,$exit); $s->same('',$out);
     $s->same("CLI arguments unavailable. Enable register_argc_argv.\n",$err);
 });

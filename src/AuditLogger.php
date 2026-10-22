@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge;
+namespace Lfcheng\PrintDispatch;
 
-use Lfcheng\PrintBridge\Exception\BridgeException;
+use Lfcheng\PrintDispatch\Exception\BridgeException;
 
 /** Allowlisted structured fields only: no document, key, token, path, printer, stdout or stderr. */
 final class AuditLogger

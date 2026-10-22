@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — PrintDispatch naming before public release
+
+- Rename the project to PrintDispatch, Composer package to `lfcheng92/print-dispatch`, PHP namespace to `Lfcheng\PrintDispatch\`, and CLI to `bin/print-dispatch`.
+- Update imports, examples, test fixtures, CLI help and CUPS job-title branding; queue/storage/retry behavior, dependencies and license are unchanged.
+- Earlier private-candidate consumers must update package requirements, FQCNs and CLI paths; no legacy class aliases or executable proxy are retained.
+- Preserve existing Git history. Server-side repository rename is a separate pending action while browser operations are prohibited.
+
 ## Unreleased — local first version
 
 - Fix CI/runtime handling when CLI argv is unavailable; report a clear error without warnings.

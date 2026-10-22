@@ -1,13 +1,13 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge;
+namespace Lfcheng\PrintDispatch;
 
-use Lfcheng\PrintBridge\Exception\BridgeException;
-use Lfcheng\PrintBridge\Exception\LeaseLost;
-use Lfcheng\PrintBridge\Transport\Submission;
-use Lfcheng\PrintBridge\Transport\Transport;
-use Lfcheng\PrintBridge\Transport\TransportResult;
+use Lfcheng\PrintDispatch\Exception\BridgeException;
+use Lfcheng\PrintDispatch\Exception\LeaseLost;
+use Lfcheng\PrintDispatch\Transport\Submission;
+use Lfcheng\PrintDispatch\Transport\Transport;
+use Lfcheng\PrintDispatch\Transport\TransportResult;
 
 final class Worker
 {

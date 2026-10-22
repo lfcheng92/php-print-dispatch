@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge;
+namespace Lfcheng\PrintDispatch;
 
 interface Clock
 {

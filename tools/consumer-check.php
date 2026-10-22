@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 // Offline consumer test: archive, inspect, extract, copy-install, hide source, execute library + bin.
 $root = dirname(__DIR__);
-$base = sys_get_temp_dir() . '/print-bridge-consumer-' . bin2hex(random_bytes(8));
+$base = sys_get_temp_dir() . '/print-dispatch-consumer-' . bin2hex(random_bytes(8));
 mkdir($base, 0700);
-$composerPath = getenv('PRINT_BRIDGE_COMPOSER') ?: 'composer';
+$composerPath = getenv('PRINT_DISPATCH_COMPOSER') ?: 'composer';
 $composer = is_file($composerPath) ? [PHP_BINARY, $composerPath] : [$composerPath];
 $environment = [
     'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'LC_ALL' => 'C',
@@ -37,11 +37,11 @@ function removeTree(string $path): void
 
 try {
     mkdir($base . '/archives', 0700);
-    run([...$composer, 'archive', '--format=zip', '--dir=' . $base . '/archives', '--file=print-bridge', '--no-interaction', '--no-plugins', '--no-scripts'], $root, $environment);
-    $archive = $base . '/archives/print-bridge.zip';
+    run([...$composer, 'archive', '--format=zip', '--dir=' . $base . '/archives', '--file=print-dispatch', '--no-interaction', '--no-plugins', '--no-scripts'], $root, $environment);
+    $archive = $base . '/archives/print-dispatch.zip';
     $zip = new ZipArchive();
     if ($zip->open($archive) !== true) { throw new RuntimeException('Cannot inspect source archive.'); }
-    $required = ['composer.json', 'src/Queue.php', 'bin/print-bridge', 'README.md', 'README.en.md', 'SECURITY.md', 'LICENSE'];
+    $required = ['composer.json', 'src/Queue.php', 'bin/print-dispatch', 'README.md', 'README.en.md', 'SECURITY.md', 'LICENSE'];
     foreach ($required as $entry) {
         if ($zip->locateName($entry) === false) { throw new RuntimeException('Missing archive entry: ' . $entry); }
     }
@@ -60,26 +60,26 @@ try {
     $source = $base . '/artifact-source'; mkdir($source, 0700); $zip->extractTo($source); $zip->close();
     $consumer = $base . '/consumer'; mkdir($consumer, 0700);
     file_put_contents($consumer . '/composer.json', json_encode([
-        'name'=>'print-bridge-check/isolated-consumer', 'license'=>'proprietary',
+        'name'=>'print-dispatch-check/isolated-consumer', 'license'=>'proprietary',
         'repositories'=>[
-            ['type'=>'path','url'=>'../artifact-source','options'=>['symlink'=>false,'versions'=>['lfcheng92/print-bridge'=>'dev-main']]],
+            ['type'=>'path','url'=>'../artifact-source','options'=>['symlink'=>false,'versions'=>['lfcheng92/print-dispatch'=>'dev-main']]],
             ['packagist.org'=>false],
         ],
-        'require'=>['lfcheng92/print-bridge'=>'dev-main'],
+        'require'=>['lfcheng92/print-dispatch'=>'dev-main'],
         'config'=>['allow-plugins'=>false],
     ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
     run([...$composer,'install','--no-dev','--no-interaction','--no-plugins','--no-scripts','--prefer-dist'], $consumer, $environment);
-    if (is_link($consumer . '/vendor/lfcheng92/print-bridge')) { throw new RuntimeException('Consumer must copy, not symlink.'); }
+    if (is_link($consumer . '/vendor/lfcheng92/print-dispatch')) { throw new RuntimeException('Consumer must copy, not symlink.'); }
     rename($source, $base . '/source-hidden');
     $verify = <<<'PHP'
 <?php
 declare(strict_types=1);
 require __DIR__ . '/vendor/autoload.php';
-use Lfcheng\PrintBridge\Queue;
-use Lfcheng\PrintBridge\PrintRequest;
-use Lfcheng\PrintBridge\Worker;
-use Lfcheng\PrintBridge\Status;
-use Lfcheng\PrintBridge\Transport\FakeTransport;
+use Lfcheng\PrintDispatch\Queue;
+use Lfcheng\PrintDispatch\PrintRequest;
+use Lfcheng\PrintDispatch\Worker;
+use Lfcheng\PrintDispatch\Status;
+use Lfcheng\PrintDispatch\Transport\FakeTransport;
 $file = (new ReflectionClass(Queue::class))->getFileName();
 if (!str_starts_with($file, __DIR__ . '/vendor/')) { throw new RuntimeException('Source directory dependency.'); }
 $q = new Queue(dirname(__DIR__) . '/library-state');
@@ -89,13 +89,13 @@ $worker = new Worker($q, new FakeTransport());
 $simulated = $worker->runOnce();
 if ($simulated?->status !== Status::Simulated || $simulated->systemJobId !== null || !$simulated->jsonSerialize()['simulated'] || $worker->runOnce() !== null) { throw new RuntimeException('Consumer simulation boundary failed.'); }
 $purgeBlocked = false;
-try { $q->purgeDocument($a->id); } catch (\Lfcheng\PrintBridge\Exception\BridgeException) { $purgeBlocked = true; }
+try { $q->purgeDocument($a->id); } catch (\Lfcheng\PrintDispatch\Exception\BridgeException) { $purgeBlocked = true; }
 if (!$purgeBlocked || !is_file($q->documentPath($a))) { throw new RuntimeException('Simulated payload was not retained.'); }
 echo "Copied archive consumer library OK\n";
 PHP;
     file_put_contents($consumer . '/verify.php', $verify);
     echo run([PHP_BINARY, $consumer . '/verify.php'], $base, $environment);
-    $cli = $consumer . '/vendor/bin/print-bridge';
+    $cli = $consumer . '/vendor/bin/print-dispatch';
     run([PHP_BINARY, $cli, 'help'], $base, $environment);
     $out = run([PHP_BINARY,$cli,'submit','--state',$base.'/cli-state','--key','cli-consumer','--printer','demo','--mime','text/plain'], $base, $environment, "Synthetic installed CLI\n");
     $submitted = json_decode($out, true, flags: JSON_THROW_ON_ERROR);

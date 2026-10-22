@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
-$files = [$root . '/bin/print-bridge'];
+$files = [$root . '/bin/print-dispatch'];
 foreach (['src', 'tests', 'examples', 'tools'] as $directory) {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/' . $directory)) as $file) {
         if ($file->isFile() && $file->getExtension() === 'php') {

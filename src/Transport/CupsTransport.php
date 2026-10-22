@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge\Transport;
+namespace Lfcheng\PrintDispatch\Transport;
 
-use Lfcheng\PrintBridge\FailureCode;
-use Lfcheng\PrintBridge\PrintRequest;
+use Lfcheng\PrintDispatch\FailureCode;
+use Lfcheng\PrintDispatch\PrintRequest;
 
 /** macOS/Linux CUPS only. It reports scheduler acceptance, never physical paper output. */
 final class CupsTransport implements Transport
@@ -41,7 +41,7 @@ final class CupsTransport implements Transport
         }
         $result = $this->runner->run([
             $this->executable, '-h', 'localhost:631', '-d', $job->printer, '-n', (string) $job->copies,
-            '-t', 'print-bridge:' . $job->id, '-o', 'document-format=' . $job->mediaType, '--', $submission->documentPath,
+            '-t', 'print-dispatch:' . $job->id, '-o', 'document-format=' . $job->mediaType, '--', $submission->documentPath,
         ], $this->timeoutSeconds);
         if (!$result->started) {
             return TransportResult::notSubmitted($result->failure ?? FailureCode::SpawnFailed);

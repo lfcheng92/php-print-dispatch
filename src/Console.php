@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge;
+namespace Lfcheng\PrintDispatch;
 
-use Lfcheng\PrintBridge\Exception\IdempotencyConflict;
-use Lfcheng\PrintBridge\Transport\CupsTransport;
-use Lfcheng\PrintBridge\Transport\FakeTransport;
+use Lfcheng\PrintDispatch\Exception\IdempotencyConflict;
+use Lfcheng\PrintDispatch\Transport\CupsTransport;
+use Lfcheng\PrintDispatch\Transport\FakeTransport;
 
 final class Console
 {
@@ -15,7 +15,7 @@ final class Console
         try {
             $command = $arguments[1] ?? 'help';
             if ($command === 'help' || $command === '--help') {
-                fwrite(STDOUT, "print-bridge: init | submit | status | work | recover | retry | resolve | cancel | purge | prune\n"
+                fwrite(STDOUT, "print-dispatch: init | submit | status | work | recover | retry | resolve | cancel | purge | prune\n"
                     . "All commands require --state /absolute/private/directory.\n"
                     . "submit --key KEY --printer NAME --mime text/plain [--copies 1]: document from stdin.\n"
                     . "work --transport fake|cups [--once | --max-jobs N] [--printers demo] [--lease 45] [--timeout 10] [--lp /usr/bin/lp]\n"

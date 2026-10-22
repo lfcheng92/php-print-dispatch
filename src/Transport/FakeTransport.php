@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Lfcheng\PrintBridge\Transport;
+namespace Lfcheng\PrintDispatch\Transport;
 
-use Lfcheng\PrintBridge\FailureCode;
-use Lfcheng\PrintBridge\PrintRequest;
+use Lfcheng\PrintDispatch\FailureCode;
+use Lfcheng\PrintDispatch\PrintRequest;
 
 /** No OS printing; useful for local integration and deliberate simulation. */
 final class FakeTransport implements Transport

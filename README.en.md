@@ -1,8 +1,10 @@
-# Print Bridge
+# PrintDispatch
+
+> Composer/PHP/CLI now use PrintDispatch. The GitHub remote is still `lfcheng92/php-print-bridge`; the server-side repository rename remains pending. The local directory is `php-print-dispatch`.
 
 [中文](README.md)
 
-`lfcheng92/print-bridge` is a framework-independent PHP Composer library and CLI worker with a persistent SQLite queue, private local spool, business idempotency, lease recovery and conservative CUPS submission semantics. There are no runtime Composer dependencies, Node.js, Electron, HTTP listeners or persistent account tokens.
+`lfcheng92/print-dispatch` is a framework-independent PHP Composer library and CLI worker with a persistent SQLite queue, private local spool, business idempotency, lease recovery and conservative CUPS submission semantics. There are no runtime Composer dependencies, Node.js, Electron, HTTP listeners or persistent account tokens.
 
 **Local first version, unpublished.** The macOS/Linux CUPS adapter has only been exercised through isolated executable fixtures. Real hardware validation is pending. Windows is unsupported. `submitted` means scheduler acceptance; `physical_output` always remains `unverified`. End-to-end exactly-once delivery is not guaranteed.
 
@@ -23,26 +25,26 @@ This package is not on a public registry. For a local consumer use:
 
 ```json
 {
-  "repositories": [{"type":"path","url":"../php-print-bridge","options":{
-    "symlink":false,"versions":{"lfcheng92/print-bridge":"dev-main"}
+  "repositories": [{"type":"path","url":"../php-print-dispatch","options":{
+    "symlink":false,"versions":{"lfcheng92/print-dispatch":"dev-main"}
   }}],
-  "require":{"lfcheng92/print-bridge":"dev-main"}
+  "require":{"lfcheng92/print-dispatch":"dev-main"}
 }
 ```
 
-Run `composer install --no-dev --no-plugins --no-scripts`. The installed entry point is `vendor/bin/print-bridge`.
+Run `composer install --no-dev --no-plugins --no-scripts`. The installed entry point is `vendor/bin/print-dispatch`.
 
 ## CLI
 
 The following uses FakeTransport only; it never contacts CUPS. Set STATE to a new absolute path under your own existing private parent.
 
 ```sh
-STATE=/absolute/private-parent/print-bridge-state
-php bin/print-bridge init --state "$STATE"
-printf 'Synthetic text\n' | php bin/print-bridge submit --state "$STATE" \
+STATE=/absolute/private-parent/print-dispatch-state
+php bin/print-dispatch init --state "$STATE"
+printf 'Synthetic text\n' | php bin/print-dispatch submit --state "$STATE" \
   --key synthetic-001 --printer demo --mime text/plain
-php bin/print-bridge work --state "$STATE" --once --transport fake
-php bin/print-bridge status --state "$STATE" --id JOB_ID_FROM_SUBMIT
+php bin/print-dispatch work --state "$STATE" --once --transport fake
+php bin/print-dispatch status --state "$STATE" --id JOB_ID_FROM_SUBMIT
 ```
 
 Every command requires `--state DIR`. `submit` reads stdin only; there are no file/URL, remote-server or arbitrary CUPS-option inputs. Options use `--name VALUE`; unknown and duplicate options fail.
@@ -71,8 +73,8 @@ CUPS requires deliberate `--transport cups --printers NAME[,NAME]`. Administrato
 ## Library API
 
 ```php
-use Lfcheng\PrintBridge\{PrintRequest, Queue, Worker};
-use Lfcheng\PrintBridge\Transport\FakeTransport;
+use Lfcheng\PrintDispatch\{PrintRequest, Queue, Worker};
+use Lfcheng\PrintDispatch\Transport\FakeTransport;
 
 $queue = new Queue('/absolute/private-parent/state');
 $job = $queue->enqueue('synthetic-order-1', new PrintRequest('demo', "Synthetic text\n", 'text/plain'));

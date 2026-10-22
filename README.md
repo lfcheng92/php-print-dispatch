@@ -1,8 +1,10 @@
-# Print Bridge · 纯 PHP 打印代理
+# PrintDispatch · 纯 PHP 打印代理
+
+> 当前 Composer/PHP/CLI 使用新名 PrintDispatch。GitHub 远端仍为 `lfcheng92/php-print-bridge`，服务器端仓库更名尚待完成；本地目录为 `php-print-dispatch`。
 
 [English](README.en.md)
 
-`lfcheng92/print-bridge` 是框架无关的 Composer 库及 CLI worker。用本地 SQLite 和受控 spool 保存任务，提供业务幂等、状态查询、租约恢复及保守的 CUPS 提交语义。运行时没有第三方 PHP 包，不依赖 Node.js、Electron、Web 服务或常驻账户令牌。
+`lfcheng92/print-dispatch` 是框架无关的 Composer 库及 CLI worker。用本地 SQLite 和受控 spool 保存任务，提供业务幂等、状态查询、租约恢复及保守的 CUPS 提交语义。运行时没有第三方 PHP 包，不依赖 Node.js、Electron、Web 服务或常驻账户令牌。
 
 当前为**本地首版，尚未发布**。macOS/Linux 的 CUPS 适配器仅经过隔离假命令验证，尚未做真实打印机验证；不承诺 Windows 支持。`submitted` 仅表示操作系统队列接受，物理出纸始终为 `unverified`。不能保证端到端 exactly-once。
 
@@ -27,28 +29,28 @@ php tools/consumer-check.php
 ```json
 {
   "repositories": [
-    {"type": "path", "url": "../php-print-bridge", "options": {
+    {"type": "path", "url": "../php-print-dispatch", "options": {
       "symlink": false,
-      "versions": {"lfcheng92/print-bridge": "dev-main"}
+      "versions": {"lfcheng92/print-dispatch": "dev-main"}
     }}
   ],
-  "require": {"lfcheng92/print-bridge": "dev-main"}
+  "require": {"lfcheng92/print-dispatch": "dev-main"}
 }
 ```
 
-再运行 `composer install --no-dev --no-plugins --no-scripts`。`vendor/bin/print-bridge` 是安装后的 CLI。`tools/consumer-check.php` 使用新建临时目录、禁用网络和 Packagist，先检查 Composer ZIP，再从解压目录以 **copy** 方式安装，隐藏源目录后运行库和 Composer bin 代理。
+再运行 `composer install --no-dev --no-plugins --no-scripts`。`vendor/bin/print-dispatch` 是安装后的 CLI。`tools/consumer-check.php` 使用新建临时目录、禁用网络和 Packagist，先检查 Composer ZIP，再从解压目录以 **copy** 方式安装，隐藏源目录后运行库和 Composer bin 代理。
 
 ## 安全的本地 CLI 体验
 
 下面只运行 FakeTransport，不接触打印系统。`STATE` 仅是本次 shell 变量，不是系统配置；请将其换成自己控制的绝对目录，且父目录已经存在。
 
 ```sh
-STATE=/absolute/private-parent/print-bridge-state
-php bin/print-bridge init --state "$STATE"
-printf 'Synthetic document\n' | php bin/print-bridge submit --state "$STATE" \
+STATE=/absolute/private-parent/print-dispatch-state
+php bin/print-dispatch init --state "$STATE"
+printf 'Synthetic document\n' | php bin/print-dispatch submit --state "$STATE" \
   --key example-001 --printer demo --mime text/plain --copies 1
-php bin/print-bridge work --state "$STATE" --once --transport fake
-php bin/print-bridge status --state "$STATE" --id JOB_ID_FROM_SUBMIT
+php bin/print-dispatch work --state "$STATE" --once --transport fake
+php bin/print-dispatch status --state "$STATE" --id JOB_ID_FROM_SUBMIT
 ```
 
 `submit` 只读标准输入，不接受文件路径、URL、任意 CUPS 选项或远端服务器参数。调用方负责读取自己授权的数据并处理背压。相同幂等键和参数返回同一 ID；文档、打印机、MIME、份数或初始重试上限变化则抛出冲突。
@@ -79,8 +81,8 @@ CUPS 必须由管理员在已核验的本地环境显式启用 `--transport cups
 ## PHP API
 
 ```php
-use Lfcheng\PrintBridge\{PrintRequest, Queue, Worker};
-use Lfcheng\PrintBridge\Transport\FakeTransport;
+use Lfcheng\PrintDispatch\{PrintRequest, Queue, Worker};
+use Lfcheng\PrintDispatch\Transport\FakeTransport;
 
 $queue = new Queue('/absolute/private-parent/queue-state');
 $job = $queue->enqueue('order-synthetic-001', new PrintRequest(

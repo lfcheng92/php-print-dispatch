@@ -13,4 +13,4 @@ if (!isset($argv)) {
     fwrite(STDERR, "CLI arguments unavailable. Enable register_argc_argv.\n");
     exit(1);
 }
-exit(\Lfcheng\PrintBridge\Console::run($argv));
+exit(\Lfcheng\PrintDispatch\Console::run($argv));
