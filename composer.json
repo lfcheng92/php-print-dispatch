@@ -1,0 +1,27 @@
+{
+    "name": "lfcheng92/print-bridge",
+    "description": "Framework-independent PHP print queue with conservative CUPS submission semantics.",
+    "type": "library",
+    "license": "proprietary",
+    "keywords": ["printing", "cups", "sqlite", "queue"],
+    "require": {
+        "php": "^8.2",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-json": "*",
+        "ext-hash": "*"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1"
+    },
+    "autoload": {"psr-4": {"Lfcheng\\PrintBridge\\": "src/"}},
+    "bin": ["bin/print-bridge"],
+    "scripts": {
+        "test": "@php tests/run.php",
+        "lint": "@php tools/lint.php",
+        "analyse": "phpstan analyse --debug --no-progress --memory-limit=256M",
+        "check": ["@lint", "@analyse", "@test"]
+    },
+    "config": {"allow-plugins": false, "sort-packages": true},
+    "archive": {"exclude": ["/vendor", "/var", "/build", "/.git", "/.github", "/.phpstan", "/.gitignore", "/.gitattributes", "/composer.lock", "/phpstan.neon", "/tests", "/tools", "/LOCAL_VALIDATION.md", "/UPLOAD_CHECKLIST.md"]}
+}

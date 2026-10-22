@@ -1,0 +1,16 @@
+Rights and licensing notice — pending owner review
+
+This task-created implementation is not released under an open-source license.
+No permission to publish or relicense employer-owned or third-party material is
+granted by this file. Composer's "proprietary" metadata is a conservative marker,
+not a legal conclusion about ownership.
+
+The intended maintainer must confirm ownership and select an appropriate license
+before any public release. Reimplementation alone does not establish those rights.
+
+Third-party dependencies and system components retain their own licenses. The
+development-only PHPStan package includes its own MIT license in its installed
+distribution. PHP, SQLite and CUPS are separately installed runtime/system
+components; none of their implementation source is bundled in this source package.
+
+See PROVENANCE.md for the source boundary recorded during development.

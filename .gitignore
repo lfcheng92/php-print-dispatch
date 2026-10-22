@@ -1,0 +1,17 @@
+/vendor/
+/var/
+/build/
+/.phpstan/
+/.idea/
+/.vscode/
+.DS_Store
+.env
+.env.*
+*.sqlite*
+*.db*
+*.log
+*.jsonl
+*.pem
+*.key
+*.phar
+auth.json
