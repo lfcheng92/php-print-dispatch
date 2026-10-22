@@ -506,16 +506,18 @@ $s->test('empty commands and invalid system IDs fail explicitly', function () us
     }
 });
 $s->test('concurrent first-open initialization does not overwrite queue state', function () use ($s): void {
-    $root = $s->path();
-    $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
-        . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root,true) . ');'
-        . 'echo $q->enqueue("first-open",new \\Lfcheng\\PrintBridge\\PrintRequest("demo","synthetic","text/plain"))->id;');
-    $children=[]; for ($i=0;$i<4;++$i) { $p=proc_open([PHP_BINARY,$script],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$children[]=[$p,$pipes]; }
-    $ids=[]; foreach ($children as [$p,$pipes]) {
-        $ids[]=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);
-        $s->same(0,proc_close($p));$s->same('',$err);
+    for ($round = 0; $round < 5; ++$round) {
+        $root = $s->path();
+        $script = $s->script('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
+            . '$q=new \\Lfcheng\\PrintBridge\\Queue(' . var_export($root,true) . ');'
+            . 'echo $q->enqueue("first-open",new \\Lfcheng\\PrintBridge\\PrintRequest("demo","synthetic","text/plain"))->id;');
+        $children=[]; for ($i=0;$i<4;++$i) { $p=proc_open([PHP_BINARY,$script],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$children[]=[$p,$pipes]; }
+        $ids=[]; foreach ($children as [$p,$pipes]) {
+            $ids[]=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);
+            $exit=proc_close($p);$s->same('',$err);$s->same(0,$exit);
+        }
+        $s->same(1,count(array_unique($ids)));$s->same(1,count(glob($root.'/spool/*.data')));
     }
-    $s->same(1,count(array_unique($ids)));$s->same(1,count(glob($root.'/spool/*.data')));
 });
 
 $s->test('CLI requires transport even when CUPS-specific arguments are present', function () use ($s): void {
@@ -573,6 +575,12 @@ $s->test('FakeTransport refuses forged submitted outcomes and simulation require
     $s->throws(BridgeException::class,fn()=>$q->purgeDocument($job->id));
     $s->same(Status::Cancelled,$q->cancel($job->id)->status);
     $s->truth($q->purgeDocument($job->id)->documentPurged);
+});
+
+$s->test('CLI reports unavailable arguments without warnings when register_argc_argv is off', function () use ($s): void {
+    [$exit,$out,$err] = $s->command([PHP_BINARY,'-d','register_argc_argv=0',dirname(__DIR__).'/bin/print-bridge','help']);
+    $s->same(1,$exit); $s->same('',$out);
+    $s->same("CLI arguments unavailable. Enable register_argc_argv.\n",$err);
 });
 
 $s->remove($s->base);

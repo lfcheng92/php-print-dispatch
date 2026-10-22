@@ -2,6 +2,9 @@
 
 ## Unreleased — local first version
 
+- Fix CI/runtime handling when CLI argv is unavailable; report a clear error without warnings.
+- Fix concurrent first-open WAL transitions with a five-second SQLITE_BUSY retry budget before applying the normal SQLite busy timeout.
+
 - Fix: CLI work now requires explicit --transport and rejects fake with CUPS-only options before claiming jobs.
 - Fix: fake success persists as simulated with no OS job ID, cannot directly purge payload, and requires explicit retry/cancel; injected submitted outcomes are rejected.
 - Add regression and installed-consumer coverage for missing/mixed transport options and simulation/actual-queue handoff.

@@ -9,4 +9,8 @@ if (!is_string($autoload) || !is_file($autoload)) {
     exit(1);
 }
 require $autoload;
+if (!isset($argv)) {
+    fwrite(STDERR, "CLI arguments unavailable. Enable register_argc_argv.\n");
+    exit(1);
+}
 exit(\Lfcheng\PrintBridge\Console::run($argv));

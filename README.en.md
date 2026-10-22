@@ -8,7 +8,7 @@
 
 ## Requirements and installation
 
-PHP `^8.2` with PDO, pdo_sqlite, json and hash. Use a private local state directory (0700, files 0600) under a trusted existing parent, outside the source tree and web root. No network filesystem or shared multi-host queue. CUPS additionally requires a configured macOS/Linux `lp` and enabled `proc_open`; this package never installs, discovers or changes printers.
+PHP `^8.2` with PDO, pdo_sqlite, json and hash. CLI requires register_argc_argv; if disabled, it exits clearly with code 1 without claiming work. Use a private local state directory (0700, files 0600) under a trusted existing parent, outside the source tree and web root. No network filesystem or shared multi-host queue. CUPS additionally requires a configured macOS/Linux `lp` and enabled `proc_open`; this package never installs, discovers or changes printers.
 
 Accepted input is PDF (header check only) or UTF-8 plain text without unsafe control codes, up to 10 MiB by default, 1–99 copies. A PDF header check is not sanitization: only submit trusted documents and maintain system filters separately.
 

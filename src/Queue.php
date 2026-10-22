@@ -40,8 +40,9 @@ final class Queue
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
             \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
         ]);
+        $this->db->exec('PRAGMA busy_timeout=0');
+        $this->enableWal();
         $this->db->exec('PRAGMA busy_timeout=5000');
-        $this->db->exec('PRAGMA journal_mode=WAL');
         $this->db->exec('PRAGMA synchronous=FULL');
         $this->transaction(function (): void {
             $versionQuery = $this->db->query('PRAGMA user_version');
@@ -324,6 +325,23 @@ final class Queue
             throw new BridgeException('Spool integrity check failed.');
         }
         return $path;
+    }
+
+    /** SQLite can reject concurrent first-open WAL transitions without invoking busy_timeout. */
+    private function enableWal(): void
+    {
+        $deadline = hrtime(true) + 5_000_000_000;
+        while (true) {
+            try {
+                $this->db->exec('PRAGMA journal_mode=WAL');
+                return;
+            } catch (\PDOException $error) {
+                if (($error->errorInfo[1] ?? null) !== 5 || hrtime(true) >= $deadline) {
+                    throw $error;
+                }
+                usleep(10_000);
+            }
+        }
     }
 
     private function recoverInside(int $now): int
