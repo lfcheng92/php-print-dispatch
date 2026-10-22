@@ -196,10 +196,10 @@ $s->test('reject database symlink', function () use ($s): void {
     $s->throws(BridgeException::class, fn () => new Queue($path));
     $s->same('synthetic', file_get_contents($target));
 });
-$s->test('fake worker submits once and never claims submitted jobs', function () use ($s): void {
+$s->test('fake worker simulates once and never claims simulated jobs', function () use ($s): void {
     $q = $s->queue(); $job = $q->enqueue('one', request()); $fake = new FakeTransport();
     $worker = new Worker($q, $fake); $result = $worker->runOnce();
-    $s->same(Status::Submitted, $result->status); $s->same(1, $result->attempts);
+    $s->same(Status::Simulated, $result->status); $s->same(1, $result->attempts);
     $s->same('unverified', $result->jsonSerialize()['physical_output']);
     $s->same(null, $worker->runOnce()); $s->same(1, count($fake->submissions));
     $s->same($job->id, $q->enqueue('one', request())->id);
@@ -255,7 +255,7 @@ $s->test('manual retry adds one bounded attempt and preserves attempt count', fu
     $q = $s->queue(); $job = $q->enqueue('manual', request(), 1);
     (new Worker($q, new FakeTransport(['demo'], TransportResult::notSubmitted(FailureCode::SafeRejection, true))))->runOnce();
     $s->same(2, $q->retry($job->id)->maxAttempts);
-    $s->same(Status::Submitted, (new Worker($q, new FakeTransport()))->runOnce()->status);
+    $s->same(Status::Simulated, (new Worker($q, new FakeTransport()))->runOnce()->status);
     $s->same(2, $q->get($job->id)->attempts);
 });
 $s->test('transport exceptions are unknown and error messages do not leak', function () use ($s): void {
@@ -297,7 +297,8 @@ $s->test('cancellation and purge preserve idempotency tombstones', function () u
 $s->test('purge submitted payload is repeatable and active payload cannot purge', function () use ($s): void {
     $q = $s->queue(); $job = $q->enqueue('purge', request());
     $s->throws(BridgeException::class, fn () => $q->purgeDocument($job->id));
-    (new Worker($q, new FakeTransport()))->runOnce();
+    $lp = $s->script('echo "request id is demo-1 (1 file(s))\\n";');
+    (new Worker($q, new CupsTransport(['demo'], $lp)))->runOnce();
     $s->truth($q->purgeDocument($job->id)->documentPurged); $s->truth($q->purgeDocument($job->id)->documentPurged);
     $s->same(Status::Submitted, $q->enqueue('purge', request())->status);
 });
@@ -406,17 +407,17 @@ $s->test('CLI separate-process submit, dedupe, status and fake work integration'
     [$exit, $out, $err] = $s->command($submit, "Synthetic CLI\n"); $s->same(0, $exit); $s->same('', $err);
     $job = json_decode($out, true, flags: JSON_THROW_ON_ERROR); $s->same('received', $job['status']);
     [$exit, $out] = $s->command($submit, "Synthetic CLI\n"); $s->same(0, $exit); $s->same($job['id'], json_decode($out, true)['id']);
-    [$exit, $out] = $s->command([PHP_BINARY, $bin, 'work', '--state', $root, '--once']);
-    $s->same(0, $exit); $s->same('submitted', json_decode($out, true)['status']);
+    [$exit, $out] = $s->command([PHP_BINARY, $bin, 'work', '--state', $root, '--once', '--transport', 'fake']);
+    $s->same(0, $exit); $s->same('simulated', json_decode($out, true)['status']);
     [$exit, $out] = $s->command([PHP_BINARY, $bin, 'status', '--state', $root, '--id', $job['id']]);
     $s->same(0, $exit); $s->same('unverified', json_decode($out, true)['physical_output']);
-    [$exit, $out] = $s->command([PHP_BINARY, $bin, 'work', '--state', $root, '--once']);
+    [$exit, $out] = $s->command([PHP_BINARY, $bin, 'work', '--state', $root, '--once', '--transport', 'fake']);
     $s->same(0, $exit); $s->same('idle', json_decode($out, true)['state']);
 });
 $s->test('CLI rejects malformed options, files, URLs, conflicts and missing allowlist', function () use ($s): void {
     $root = $s->path(); $bin = dirname(__DIR__) . '/bin/print-bridge';
     foreach ([['status','--id','../secret'], ['submit','--file','/etc/passwd'], ['submit','--url','https://example.invalid'],
-        ['work','--transport','cups'], ['work','--once','--once'], ['work','--max-jobs','-1'], ['bogus']] as $args) {
+        ['work','--transport','cups'], ['work','--once','--once'], ['work','--transport','fake','--max-jobs','-1'], ['bogus']] as $args) {
         [$exit, $out, $err] = $s->command([PHP_BINARY, $bin, ...$args, '--state', $root]);
         $s->same(2, $exit); $s->same('', $out); $s->same('invalid_input', json_decode($err, true)['error']);
     }
@@ -473,7 +474,7 @@ $s->test('concurrent workers submit a single queued job only once', function () 
         $s->same(0,proc_close($p));$s->same('',$err);
     }
     $s->same(1,count(array_filter($ids, fn($id)=>$id===$job->id)));
-    $s->same(1,$q->get($job->id)->attempts); $s->same(Status::Submitted,$q->get($job->id)->status);
+    $s->same(1,$q->get($job->id)->attempts); $s->same(Status::Simulated,$q->get($job->id)->status);
 });
 
 $s->test('truncated stdout can never be accepted as a complete receipt', function () use ($s): void {
@@ -485,10 +486,12 @@ $s->test('truncated stdout can never be accepted as a complete receipt', functio
 $s->test('audit failure after submission never permits duplicate processing', function () use ($s): void {
     $path = $s->path(); $q = new Queue($path); $job = $q->enqueue('log-failure', request());
     $logger = new AuditLogger($path . '/logs'); chmod($path . '/logs/events.jsonl', 0644);
-    $fake = new FakeTransport(); $worker = new Worker($q, $fake, logger: $logger);
+    $calls = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($calls, true) . ', "call\\n", FILE_APPEND); echo "request id is demo-1 (1 file(s))\\n";');
+    $worker = new Worker($q, new CupsTransport(['demo'], $lp), logger: $logger);
     $s->throws(BridgeException::class, fn () => $worker->runOnce());
     $s->same(Status::Submitted, $q->get($job->id)->status); $s->same(null, $worker->runOnce());
-    $s->same(1, count($fake->submissions));
+    $s->same("call\n", file_get_contents($calls));
 });
 $s->test('newer schema is rejected without changing its version', function () use ($s): void {
     $path = $s->path(); $q = new Queue($path);
@@ -513,6 +516,63 @@ $s->test('concurrent first-open initialization does not overwrite queue state', 
         $s->same(0,proc_close($p));$s->same('',$err);
     }
     $s->same(1,count(array_unique($ids)));$s->same(1,count(glob($root.'/spool/*.data')));
+});
+
+$s->test('CLI requires transport even when CUPS-specific arguments are present', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('explicit-mode', request(printer: 'office'));
+    $marker = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($marker, true) . ', "called"); echo "request id is office-1 (1 file(s))\\n";');
+    $bin = dirname(__DIR__) . '/bin/print-bridge';
+    foreach ([[], ['--printers','office','--lp',$lp], ['--printers','office','--timeout','1']] as $extra) {
+        [$exit,$out,$err] = $s->command([PHP_BINARY,$bin,'work','--state',$root,'--once',...$extra]);
+        $s->same(2,$exit); $s->same('',$out); $s->same('invalid_input',json_decode($err,true)['error']);
+        $s->same(Status::Received,$q->get($job->id)->status); $s->same(0,$q->get($job->id)->attempts);
+    }
+    $s->same(false,file_exists($marker)); $s->truth(is_file($q->documentPath($job)));
+});
+$s->test('CLI rejects fake and CUPS-only option mixtures without claiming work', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('mixed-mode', request(printer: 'office'));
+    $marker = $s->path(); $lp = $s->script('file_put_contents(' . var_export($marker,true) . ', "called");');
+    foreach ([['--lp',$lp], ['--timeout','1'], ['--lp',$lp,'--timeout','1']] as $extra) {
+        [$exit,$out,$err] = $s->command([PHP_BINARY,dirname(__DIR__).'/bin/print-bridge','work','--state',$root,
+            '--once','--transport','fake','--printers','office',...$extra]);
+        $s->same(2,$exit); $s->same('',$out); $s->same('invalid_input',json_decode($err,true)['error']);
+        $s->same(Status::Received,$q->get($job->id)->status); $s->same(0,$q->get($job->id)->attempts);
+    }
+    $s->same(false,file_exists($marker));
+});
+$s->test('simulation is persistent, has no OS receipt and cannot directly purge payload', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('simulation-boundary', request(printer: 'office'));
+    $result = (new Worker($q,new FakeTransport(['office'])))->runOnce();
+    $s->same(Status::Simulated,$result->status); $s->same(null,$result->systemJobId);
+    $s->same(true,$result->jsonSerialize()['simulated']); $s->same('unverified',$result->jsonSerialize()['physical_output']);
+    $s->same(Status::Simulated,(new Queue($root))->get($job->id)->status);
+    $s->same(Status::Simulated,$q->enqueue('simulation-boundary',request(printer:'office'))->status);
+    $s->throws(BridgeException::class,fn()=>$q->purgeDocument($job->id));
+    $s->truth(is_file($q->documentPath($job))); $s->same(false,$q->get($job->id)->documentPurged);
+    $lp = $s->script('throw new RuntimeException("CUPS must not run without explicit requeue");');
+    $s->same(null,(new Worker($q,new CupsTransport(['office'],$lp)))->runOnce());
+});
+$s->test('simulated real-queue job needs explicit retry before CUPS may claim it', function () use ($s): void {
+    $q = $s->queue(); $job = $q->enqueue('explicit-handoff',request(printer:'office'));
+    (new Worker($q,new FakeTransport(['office'])))->runOnce();
+    $calls = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($calls,true) . ', "call\\n", FILE_APPEND); echo "request id is office-7 (1 file(s))\\n";');
+    $cups = new Worker($q,new CupsTransport(['office'],$lp));
+    $s->same(null,$cups->runOnce()); $s->same(false,file_exists($calls));
+    $s->same(Status::Received,$q->retry($job->id)->status);
+    $result = $cups->runOnce();
+    $s->same(Status::Submitted,$result->status); $s->same(false,$result->jsonSerialize()['simulated']);
+    $s->same('office-7',$result->systemJobId); $s->same(2,$result->attempts);
+    $s->same("call\n",file_get_contents($calls)); $s->same(null,$cups->runOnce());
+});
+$s->test('FakeTransport refuses forged submitted outcomes and simulation requires explicit cancellation to discard', function () use ($s): void {
+    $s->throws(InvalidArgumentException::class,fn()=>new FakeTransport(['demo'],TransportResult::submitted('demo-1')));
+    $q = $s->queue(); $job = $q->enqueue('discard-simulation',request());
+    (new Worker($q,new FakeTransport()))->runOnce();
+    $s->throws(BridgeException::class,fn()=>$q->purgeDocument($job->id));
+    $s->same(Status::Cancelled,$q->cancel($job->id)->status);
+    $s->truth($q->purgeDocument($job->id)->documentPurged);
 });
 
 $s->remove($s->base);

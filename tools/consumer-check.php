@@ -14,7 +14,7 @@ $environment = [
     'TMPDIR' => $base, 'TMP' => $base, 'TEMP' => $base,
 ];
 
-function run(array $command, string $directory, array $environment, string $stdin = ''): string
+function run(array $command, string $directory, array $environment, string $stdin = '', int $expectedExit = 0): string
 {
     $process = proc_open($command, [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes, $directory, $environment);
     if (!is_resource($process)) { throw new RuntimeException('Cannot run consumer check command.'); }
@@ -22,7 +22,7 @@ function run(array $command, string $directory, array $environment, string $stdi
     fclose($pipes[0]);
     $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]);
     fclose($pipes[1]); fclose($pipes[2]);
-    if (proc_close($process) !== 0) { throw new RuntimeException('Consumer command failed: ' . $out . $err); }
+    if (proc_close($process) !== $expectedExit) { throw new RuntimeException('Consumer command failed: ' . $out . $err); }
     return $out;
 }
 
@@ -86,7 +86,11 @@ $q = new Queue(dirname(__DIR__) . '/library-state');
 $a = $q->enqueue('consumer-key', new PrintRequest('demo', "Synthetic consumer\n", 'text/plain'));
 if ($a->status !== Status::Received || $a->id !== $q->enqueue('consumer-key', new PrintRequest('demo', "Synthetic consumer\n", 'text/plain'))->id) { throw new RuntimeException('Enqueue/dedupe failed.'); }
 $worker = new Worker($q, new FakeTransport());
-if ($worker->runOnce()?->status !== Status::Submitted || $worker->runOnce() !== null) { throw new RuntimeException('Consumer worker failed.'); }
+$simulated = $worker->runOnce();
+if ($simulated?->status !== Status::Simulated || $simulated->systemJobId !== null || !$simulated->jsonSerialize()['simulated'] || $worker->runOnce() !== null) { throw new RuntimeException('Consumer simulation boundary failed.'); }
+$purgeBlocked = false;
+try { $q->purgeDocument($a->id); } catch (\Lfcheng\PrintBridge\Exception\BridgeException) { $purgeBlocked = true; }
+if (!$purgeBlocked || !is_file($q->documentPath($a))) { throw new RuntimeException('Simulated payload was not retained.'); }
 echo "Copied archive consumer library OK\n";
 PHP;
     file_put_contents($consumer . '/verify.php', $verify);
@@ -94,9 +98,15 @@ PHP;
     $cli = $consumer . '/vendor/bin/print-bridge';
     run([PHP_BINARY, $cli, 'help'], $base, $environment);
     $out = run([PHP_BINARY,$cli,'submit','--state',$base.'/cli-state','--key','cli-consumer','--printer','demo','--mime','text/plain'], $base, $environment, "Synthetic installed CLI\n");
-    if (json_decode($out, true, flags: JSON_THROW_ON_ERROR)['status'] !== 'received') { throw new RuntimeException('Installed CLI submit failed.'); }
-    $out = run([PHP_BINARY,$cli,'work','--state',$base.'/cli-state','--once'], $base, $environment);
-    if (json_decode($out, true, flags: JSON_THROW_ON_ERROR)['status'] !== 'submitted') { throw new RuntimeException('Installed CLI worker failed.'); }
+    $submitted = json_decode($out, true, flags: JSON_THROW_ON_ERROR);
+    if ($submitted['status'] !== 'received') { throw new RuntimeException('Installed CLI submit failed.'); }
+    run([PHP_BINARY,$cli,'work','--state',$base.'/cli-state','--once'], $base, $environment, '', 2);
+    $out = run([PHP_BINARY,$cli,'status','--state',$base.'/cli-state','--id',$submitted['id']], $base, $environment);
+    if (json_decode($out,true,flags:JSON_THROW_ON_ERROR)['status'] !== 'received') { throw new RuntimeException('Omitted transport consumed a real queued job.'); }
+    $out = run([PHP_BINARY,$cli,'work','--state',$base.'/cli-state','--once','--transport','fake'], $base, $environment);
+    $simulation = json_decode($out,true,flags:JSON_THROW_ON_ERROR);
+    if ($simulation['status'] !== 'simulated' || !$simulation['simulated'] || $simulation['system_job_id'] !== null) { throw new RuntimeException('Installed CLI simulation boundary failed.'); }
+    run([PHP_BINARY,$cli,'purge','--state',$base.'/cli-state','--id',$submitted['id']], $base, $environment, '', 1);
     echo 'Offline consumer: PASS; archive entries: ' . $count . '; archive SHA256: ' . hash_file('sha256', $archive) . "\n";
 } finally {
     removeTree($base);

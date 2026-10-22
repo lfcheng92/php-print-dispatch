@@ -173,6 +173,7 @@ final class Queue
             $current = $this->get($claim->job->id);
             $status = match ($result->outcome) {
                 'submitted' => Status::Submitted,
+                'simulated' => Status::Simulated,
                 'unknown' => Status::Unknown,
                 default => $result->retryable && $current->attempts < $current->maxAttempts
                     ? Status::RetryWait : Status::Failed,
@@ -182,7 +183,7 @@ final class Queue
                 available_at=?,lease_token=NULL,lease_until=NULL,updated_at=?
                 WHERE id=? AND status=? AND lease_token=? AND lease_until>?', [
                 $status->value, $result->systemJobId, $result->failure?->value,
-                $result->outcome === 'not_submitted' ? 1 : 0, $now + $delay, $now,
+                in_array($result->outcome, ['not_submitted', 'simulated'], true) ? 1 : 0, $now + $delay, $now,
                 $current->id, Status::Submitting->value, $claim->token, $now,
             ]);
             if ($changed !== 1) {
@@ -213,18 +214,18 @@ final class Queue
         return $this->transaction(fn (): int => $this->recoverInside($this->clock->now()));
     }
 
-    /** Explicitly authorize ONE extra attempt after a proven not-submitted failure. */
+    /** Explicitly requeue a simulation or authorize an extra proven-not-submitted attempt. */
     public function retry(string $id): Job
     {
         self::validateId($id);
         $now = $this->clock->now();
         $changed = $this->execute('UPDATE jobs SET status=?,available_at=?,updated_at=?,
             max_attempts=CASE WHEN attempts>=max_attempts THEN attempts+1 ELSE max_attempts END
-            WHERE id=? AND status=? AND retry_safe=1 AND document_purged=0 AND attempts<100', [
-            Status::Received->value, $now, $now, $id, Status::Failed->value,
+            WHERE id=? AND status IN (?,?) AND retry_safe=1 AND document_purged=0 AND attempts<100', [
+            Status::Received->value, $now, $now, $id, Status::Failed->value, Status::Simulated->value,
         ]);
         if ($changed !== 1) {
-            throw new BridgeException('Only a proven not-submitted failure can be retried (up to 100 attempts).');
+            throw new BridgeException('Only a simulation or proven not-submitted failure can be retried (up to 100 attempts).');
         }
         return $this->get($id);
     }
@@ -256,9 +257,9 @@ final class Queue
     public function cancel(string $id): Job
     {
         self::validateId($id);
-        $changed = $this->execute('UPDATE jobs SET status=?,retry_safe=0,updated_at=? WHERE id=? AND status IN (?,?,?)', [
+        $changed = $this->execute('UPDATE jobs SET status=?,retry_safe=0,updated_at=? WHERE id=? AND status IN (?,?,?,?)', [
             Status::Cancelled->value, $this->clock->now(), $id,
-            Status::Received->value, Status::RetryWait->value, Status::Failed->value,
+            Status::Received->value, Status::RetryWait->value, Status::Failed->value, Status::Simulated->value,
         ]);
         if ($changed !== 1) {
             throw new BridgeException('Job is already active or cannot be cancelled.');

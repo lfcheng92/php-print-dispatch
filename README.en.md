@@ -41,7 +41,7 @@ STATE=/absolute/private-parent/print-bridge-state
 php bin/print-bridge init --state "$STATE"
 printf 'Synthetic text\n' | php bin/print-bridge submit --state "$STATE" \
   --key synthetic-001 --printer demo --mime text/plain
-php bin/print-bridge work --state "$STATE" --once
+php bin/print-bridge work --state "$STATE" --once --transport fake
 php bin/print-bridge status --state "$STATE" --id JOB_ID_FROM_SUBMIT
 ```
 
@@ -52,17 +52,19 @@ Every command requires `--state DIR`. `submit` reads stdin only; there are no fi
 | `init` | Create/open private storage |
 | `submit --key KEY --printer NAME --mime TYPE [--copies 1] [--max-attempts 3]` | Persist request and return received |
 | `status --id ID` | Read a durable snapshot; no printer probes or implicit lease recovery |
-| `work --once` | Claim at most one eligible job, fake transport by default |
-| `work --max-jobs N` | Positive N: drain up to N and exit when idle; 0: poll continuously, optional pcntl signal handling |
+| `work --once --transport fake\|cups` | Explicit transport required; fake only produces simulated |
+| `work --max-jobs N --transport fake\|cups` | Positive N: drain up to N and exit when idle; 0: poll continuously, optional pcntl signal handling |
 | `recover` | Recover expired leases; claiming also does this |
-| `retry --id ID` | Only a proven not-submitted failed job with intact payload; one extra attempt after exhaustion, lifetime cap 100 |
+| `retry --id ID` | Explicitly requeue a simulated job or a proven not-submitted failure with intact payload; one extra attempt after exhaustion, lifetime cap 100 |
 | `resolve --id ID --outcome submitted --evidence TICKET --system-job-id demo-42` | Human confirmation of scheduler acceptance |
 | `resolve --id ID --outcome not-submitted --evidence TICKET` | Human proof that submission never occurred; sets failed, does not automatically retry |
-| `cancel --id ID` | Cancel received/retry_wait/failed only; never cancels an OS job |
+| `cancel --id ID` | Cancel received/retry_wait/failed/simulated only; never cancels an OS job |
 | `purge --id ID` | Remove submitted/cancelled payload, keep idempotency tombstone |
 | `prune` | Delete unreferenced regular spool files older than one hour |
 
 stdout is JSON lines. stderr contains fixed error codes, never raw exception/command output. Exit codes: 0 normal/idle (read the JSON for retry_wait), 1 storage/operation failure, 2 invalid input/not found/idempotency conflict, 3 unknown worker result, 4 failed worker result. Private logs in `STATE/logs/events.jsonl` contain only timestamp, internal job ID, status, attempts and fixed error code. No content, business key, printer, path, lease token, stdout/stderr or exception message is logged. Library callers explicitly supply AuditLogger.
+
+There is no default transport. Fake plus CUPS-only `--lp`/`--timeout` is rejected before claiming a job. Simulation persists as **simulated**, with JSON `simulated: true` and a null system_job_id; it never proves scheduler acceptance. Using fake on an actual queue leaves the claimed job simulated: CUPS will not automatically claim it, and direct purge is forbidden. Explicit retry is required before choosing cups for a real attempt. To deliberately discard it, cancel first, then purge. Use separate synthetic state for demonstrations rather than consuming actual business work.
 
 CUPS requires deliberate `--transport cups --printers NAME[,NAME]`. Administrators may set absolute `--lp`, `--timeout` (default 10s) and `--lease` (default 45s). **Enabling this mode submits real work; local validation did not execute the system lp.** The adapter fixes the scheduler to `localhost:631`, passes an argv array directly without a shell, terminates options with `--`, uses a generated job title and explicit MIME, and does not inherit account secrets or a remote CUPS environment. Simple allowlisted names only; no remote server, instances or arbitrary driver options.
 
@@ -74,7 +76,7 @@ use Lfcheng\PrintBridge\Transport\FakeTransport;
 
 $queue = new Queue('/absolute/private-parent/state');
 $job = $queue->enqueue('synthetic-order-1', new PrintRequest('demo', "Synthetic text\n", 'text/plain'));
-$result = (new Worker($queue, new FakeTransport(['demo'])))->runOnce(); // Job or null
+$result = (new Worker($queue, new FakeTransport(['demo'])))->runOnce(); // simulated Job or null
 $snapshot = $queue->get($job->id);
 ```
 
@@ -101,6 +103,7 @@ Queue claim/beginSubmission/finish/failBeforeSubmission/documentPath form the in
 | leased | Exclusive lease before durable submit marker; expired leases return to received |
 | submitting | Durable marker precedes adapter invocation; expired leases become unknown |
 | submitted | Recognized scheduler receipt or explicit human confirmation; never proof of physical output |
+| simulated | Simulation only, no system receipt; no automatic claim/direct purge, explicit retry or cancel required |
 | retry_wait | Proven not-submitted transient failure; bounded exponential backoff |
 | failed | Safe failure exhausted / manual confirmation / local integrity failure; no automatic claim |
 | unknown | Submission may have happened; no automatic retry |
@@ -109,6 +112,8 @@ Queue claim/beginSubmission/finish/failBeforeSubmission/documentPath form the in
 SQLite BEGIN IMMEDIATE serializes producers/claims, and random lease tokens fence stale state writes. Attempts increment at the durable submitting marker. There is no heartbeat; the lease must exceed the adapter's hard runtime bound by at least five seconds, including CUPS termination grace. Host suspension, clock changes and delayed storage can conservatively produce unknown.
 
 Only adapters that can prove no submission occurred may return notSubmitted. CUPS nonzero exits, timeouts, excess output, unexpected receipts and adapter exceptions are unknown. Initial maxAttempts is 1–10, default 3, with 10/20/40/80/160/300-second capped backoff. Missing executable and disallowed printer require configuration repair plus explicit retry. Missing/tampered/nonprivate payload fails before invocation and cannot be retried.
+
+An early private commit recorded fake receipts as submitted. Old rows are not automatically reinterpreted or replayed. If FakeTransport was used with that version, stop workers and independently reconcile affected jobs before cleanup; old fake-* identifiers do not prove scheduler acceptance. A real CUPS destination can itself be named fake, so prefix-only migration would be unsafe. FakeTransport now refuses injected submitted outcomes and returns only a simulation receipt or explicit failure/unknown fixtures.
 
 Before reconciling unknown, **stop all old workers and child processes, including paused ones**. Independently prove whether a job was ever accepted/output. Absence from today's queue is not proof: completed jobs can disappear. Keep unknown if proof is unavailable. Record a non-secret evidence reference, resolve, then explicitly retry only if never-submitted is established. SQLite and the scheduler have no shared transaction; a paused process or incorrect human judgment can still cause duplicates.
 

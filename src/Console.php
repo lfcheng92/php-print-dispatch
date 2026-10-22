@@ -18,9 +18,10 @@ final class Console
                 fwrite(STDOUT, "print-bridge: init | submit | status | work | recover | retry | resolve | cancel | purge | prune\n"
                     . "All commands require --state /absolute/private/directory.\n"
                     . "submit --key KEY --printer NAME --mime text/plain [--copies 1]: document from stdin.\n"
-                    . "work [--once | --max-jobs N] [--transport fake|cups] [--printers demo] [--lease 45] [--timeout 10] [--lp /usr/bin/lp]\n"
+                    . "work --transport fake|cups [--once | --max-jobs N] [--printers demo] [--lease 45] [--timeout 10] [--lp /usr/bin/lp]\n"
                     . "status/retry/cancel/purge --id ID\n"
                     . "resolve --id ID --outcome submitted|not-submitted --evidence TICKET [--system-job-id NAME-N]\n"
+                    . "Transport is required. Fake produces simulated, never submitted; --lp/--timeout require cups.\n"
                     . "CUPS requires an explicit --printers allowlist; submitted never means physical output.\n");
                 return 0;
             }
@@ -81,9 +82,12 @@ final class Console
     /** @param array<string, string> $options */
     private static function work(Queue $queue, AuditLogger $logger, array $options): int
     {
-        $mode = $options['transport'] ?? 'fake';
+        $mode = self::required($options, 'transport');
         if (!in_array($mode, ['fake', 'cups'], true) || ($mode === 'cups' && !isset($options['printers']))) {
             throw new \InvalidArgumentException('Invalid transport or missing CUPS allowlist.');
+        }
+        if ($mode === 'fake' && (isset($options['lp']) || isset($options['timeout']))) {
+            throw new \InvalidArgumentException('CUPS-only options cannot be combined with fake transport.');
         }
         $printers = explode(',', $options['printers'] ?? 'demo');
         $transport = $mode === 'cups'

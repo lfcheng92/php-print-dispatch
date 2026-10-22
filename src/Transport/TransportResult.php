@@ -21,6 +21,12 @@ final readonly class TransportResult
         return new self('submitted', $systemJobId, null, false);
     }
 
+    /** A simulation never produces a system queue receipt. */
+    public static function simulated(): self
+    {
+        return new self('simulated', null, null, false);
+    }
+
     /** Use ONLY when the adapter can prove no submission occurred. */
     public static function notSubmitted(FailureCode $failure, bool $retryable = false): self
     {

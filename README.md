@@ -47,7 +47,7 @@ STATE=/absolute/private-parent/print-bridge-state
 php bin/print-bridge init --state "$STATE"
 printf 'Synthetic document\n' | php bin/print-bridge submit --state "$STATE" \
   --key example-001 --printer demo --mime text/plain --copies 1
-php bin/print-bridge work --state "$STATE" --once
+php bin/print-bridge work --state "$STATE" --once --transport fake
 php bin/print-bridge status --state "$STATE" --id JOB_ID_FROM_SUBMIT
 ```
 
@@ -60,17 +60,19 @@ php bin/print-bridge status --state "$STATE" --id JOB_ID_FROM_SUBMIT
 | `init --state DIR` | 创建或打开私有队列 |
 | `submit --key KEY --printer NAME --mime TYPE [--copies 1] [--max-attempts 3]` | 从 stdin 接收任务，返回 received |
 | `status --id ID` | 返回持久状态快照；不会自动探测打印机或恢复租约 |
-| `work --once` | 默认 fake，至多领取一个任务 |
-| `work --max-jobs N` | 正数处理至多 N 个；队列为空即退出；0 持续轮询，支持 SIGTERM/SIGINT（需 pcntl） |
+| `work --once --transport fake\|cups` | 必须显式选 transport，至多领取一个任务；fake 只得到 simulated |
+| `work --max-jobs N --transport fake\|cups` | 正数处理至多 N 个；队列为空即退出；0 持续轮询，支持 SIGTERM/SIGINT（需 pcntl） |
 | `recover` | 恢复过期租约，worker 领取前也会执行 |
-| `retry --id ID` | 仅允许已证明未提交且 payload 完好的失败任务；耗尽后显式增加一次机会，总尝试上限 100 |
+| `retry --id ID` | 显式重新排入 simulated，或已证明未提交且 payload 完好的失败任务；耗尽后增加一次机会，总尝试上限 100 |
 | `resolve --id ID --outcome submitted --evidence TICKET --system-job-id demo-42` | 人工确认系统已接受；不会重打 |
 | `resolve --id ID --outcome not-submitted --evidence TICKET` | 人工证明从未提交后标为 failed；仍须另外执行 retry |
-| `cancel --id ID` | 仅取消 received/retry_wait/failed，本包不取消 OS 作业 |
+| `cancel --id ID` | 仅取消 received/retry_wait/failed/simulated，本包不取消 OS 作业 |
 | `purge --id ID` | 仅删除 submitted/cancelled 的 payload，保留幂等墓碑 |
 | `prune` | 删除超过 1 小时、无 DB 引用的孤立普通 spool 文件 |
 
 所有业务命令带 `--state DIR`，选项采用 `--name VALUE`，未知/重复选项报错。stdout 为逐行 JSON；错误 stderr 只含固定错误码。退出码：0 正常或空闲；1 存储/操作失败；2 输入、查询或幂等冲突；3 worker 遇到 unknown；4 worker 得到 failed。重试等待可返回 0，请读 JSON 状态。日志在运行目录 `logs/events.jsonl`，只记录时间、内部任务 ID、状态、尝试次数和固定错误码；不记录内容、幂等键、文件路径、租约令牌、打印机名、CUPS 原始输出或异常消息。库用户需显式传入 `AuditLogger`。
+
+`work` 没有默认 transport。fake 与 `--lp`/`--timeout` 混搭会在领取前拒绝，即使还提供了合法打印机名。模拟成功持久化为 **`simulated`**，JSON 标记 `simulated: true`，`system_job_id` 为 null；它既不是 OS 接收，也不是物理出纸。对同一实际队列使用 fake 会把所领取任务停在 simulated，后续 CUPS 不会自动领取，且不能直接 purge；必须明确 `retry --id ID` 重新排入后再显式选 cups。若决定丢弃，先明确 cancel，再 purge。示例和消费者验证只用合成数据；生产任务应使用单独目录，并避免试运行 worker 消费实际业务队列。
 
 CUPS 必须由管理员在已核验的本地环境显式启用 `--transport cups --printers NAME[,NAME]`，可配置绝对 `--lp` 路径、`--timeout`（默认 10 秒）和 `--lease`（默认 45 秒）。**该模式会真实提交打印，本文的验证未运行真实 lp。** 它固定连接本机 `localhost:631`，使用参数数组直接启动 `lp`，以 `--` 结束选项、固定安全标题并显式传递 MIME；不继承父进程账户秘密或 CUPS 服务器环境。白名单只接受简单名称，故不支持所有 CUPS 合法名称、类/实例、远端服务或任意驱动选项。
 
@@ -86,7 +88,7 @@ $job = $queue->enqueue('order-synthetic-001', new PrintRequest(
 ));
 $same = $queue->enqueue('order-synthetic-001', new PrintRequest('demo', "Synthetic text\n", 'text/plain'));
 $worker = new Worker($queue, new FakeTransport(['demo']));
-$result = $worker->runOnce(); // Job or null if no eligible work
+$result = $worker->runOnce(); // simulated Job，或没有可领取任务时为 null
 $snapshot = $queue->get($job->id);
 ```
 
@@ -100,7 +102,7 @@ $snapshot = $queue->get($job->id);
 | `src/Worker.php` | `runOnce(): ?Job`、提交边界、租约校验 |
 | `src/Transport/Transport.php` | `maximumRunSeconds()` 和 `submit(Submission): TransportResult` |
 | `FakeTransport.php` / `CupsTransport.php` | 模拟或本机 CUPS 适配器 |
-| `TransportResult.php` | submitted / notSubmitted / unknown；自定义适配器必须诚实判断是否可能已提交 |
+| `TransportResult.php` | submitted / simulated / notSubmitted / unknown；FakeTransport 不允许返回 submitted |
 | `AuditLogger.php` | 固定字段 JSONL，本地 flock，日志失败不回滚已提交状态 |
 | `Clock.php` | 默认 SystemClock；可注入测试时钟 |
 
@@ -114,6 +116,7 @@ $snapshot = $queue->get($job->id);
 | `leased` | 本 worker 持有独占租约，尚未写提交标记 | 过期回 received |
 | `submitting` | 提交标记已持久化，OS 是否收到可能未知 | 过期转 unknown |
 | `submitted` | 适配器获得可识别的系统队列回执，或人工确认 | 不再领取；不代表出纸 |
+| `simulated` | 仅完成模拟，没有系统队列回执 | 不自动领取、不能直接 purge；可显式 retry 或 cancel |
 | `retry_wait` | 已证明本次未提交且允许安全重试 | 指数延迟后重试，默认最多 3 次 |
 | `failed` | 本地失败/安全重试耗尽，或者人工确认未提交 | 不自动领取；只有 retry_safe 可人工重试 |
 | `unknown` | 命令已启动但结果、租约或回执不确定 | 不自动重打，需人工核查 |
@@ -122,6 +125,8 @@ $snapshot = $queue->get($job->id);
 SQLite `BEGIN IMMEDIATE` 保证同机领取及幂等检查互斥；随机 lease token 防止旧 worker 覆盖新状态。提交尝试在写入 `submitting` 时计数，状态机不会根据 CUPS 接收推断物理成功。租约须比适配器最长运行时间至少长 5 秒；CUPS 的进程终止宽限也计入运行上限。不做心跳续租，主机休眠、暂停、向前跳时钟或超长 DB 等待都可能使结果保守地变为 unknown。
 
 只有适配器明确证明未启动/未提交才可自动重试。CUPS 非零退出、超时、输出超限、格式异常，或适配器抛异常，一律 unknown。初始 `maxAttempts` 为 1–10；安全失败使用 10/20/40/80/160/300 秒封顶退避。缺少可执行文件和白名单不匹配不自动重试；修正配置后可显式 retry。文档丢失、被篡改或不再私有时在执行前失败且禁止 retry。
+
+早期私有提交曾将 fake 回执写为 submitted；旧状态不会被自动重解释或重放。若曾用旧版运行 FakeTransport，先停 worker 并独立核查受影响任务，不能把旧 `fake-*` 标识当作系统提交证明，也不能直接清除其文档。旧 CUPS 打印机也可能恰好名为 fake，因此不能只根据该前缀自动迁移。
 
 **人工核查 unknown 前必须停止所有可能仍在运行/暂停的旧 worker 和子进程。** 独立确认作业是否曾被接受/输出，不能把“现在队列里找不到”当作未提交证明（作业可能已完成或被清理）。无法可靠证明未提交就保持 unknown。记录不含秘密的 ticket 引用，再 resolve；只有确认从未提交后才考虑显式 retry。DB 和 OS 之间没有分布式事务，暂停后恢复的旧进程及人为错误仍可能导致重复；此工具不能消除这些风险。
 

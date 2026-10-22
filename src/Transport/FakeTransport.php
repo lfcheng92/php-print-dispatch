@@ -21,6 +21,9 @@ final class FakeTransport implements Transport
         foreach ($allowedPrinters as $printer) {
             PrintRequest::validatePrinter($printer);
         }
+        if ($result?->outcome === 'submitted') {
+            throw new \InvalidArgumentException('FakeTransport cannot return a system submission receipt.');
+        }
     }
 
     public function maximumRunSeconds(): int
@@ -34,6 +37,6 @@ final class FakeTransport implements Transport
             return TransportResult::notSubmitted(FailureCode::PrinterNotAllowed);
         }
         $this->submissions[] = $submission;
-        return $this->result ?? TransportResult::submitted('fake-' . (string) hexdec(substr($submission->job->id, 0, 7)));
+        return $this->result ?? TransportResult::simulated();
     }
 }

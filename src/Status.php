@@ -9,6 +9,7 @@ enum Status: string
     case Leased = 'leased';
     case Submitting = 'submitting';
     case Submitted = 'submitted';
+    case Simulated = 'simulated';
     case RetryWait = 'retry_wait';
     case Failed = 'failed';
     case Unknown = 'unknown';

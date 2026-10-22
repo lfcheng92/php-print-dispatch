@@ -37,6 +37,7 @@ final readonly class Job implements \JsonSerializable
             'created_at' => $this->createdAt, 'updated_at' => $this->updatedAt,
             'available_at' => $this->availableAt, 'lease_until' => $this->leaseUntil,
             'system_job_id' => $this->systemJobId,
+            'simulated' => $this->status === Status::Simulated,
             'last_error' => $this->lastError?->value, 'retry_safe' => $this->retrySafe,
             'document_purged' => $this->documentPurged, 'physical_output' => 'unverified',
         ];
