@@ -1,6 +1,6 @@
 # PrintDispatch · 纯 PHP 打印代理
 
-> 当前 Composer/PHP/CLI 使用新名 PrintDispatch。GitHub 远端仍为 `lfcheng92/php-print-bridge`，服务器端仓库更名尚待完成；本地目录为 `php-print-dispatch`。
+> Composer/PHP/CLI 与 GitHub 仓库现已统一为 PrintDispatch / print-dispatch。现有仓库已更名为 [lfcheng92/php-print-dispatch](https://github.com/lfcheng92/php-print-dispatch)，origin 已同步；仓库保持 PRIVATE，原提交历史保留。本地目录为 `php-print-dispatch`。
 
 [English](README.en.md)
 
@@ -143,6 +143,6 @@ SQLite `BEGIN IMMEDIATE` 保证同机领取及幂等检查互斥；随机 lease 
 
 ## 验证与发布边界
 
-测试使用随机私有临时目录、SQLite、FakeTransport 和临时 PHP 可执行假命令，包括真实子进程终止和并发；不会调用真实 `lp`、访问客户数据或生产服务。PHPStan 以 level 8、`--debug` 单进程运行，避免本地并行协调端口。`tools/consumer-check.php` 额外需要 zip 扩展（仅验证工具需要，运行库不需要）。CI 声明 macOS/Linux、PHP 8.2/8.3/8.4/8.5 矩阵，但未在本轮云端执行；实际已执行结果见 [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md)。
+测试使用随机私有临时目录、SQLite、FakeTransport 和临时 PHP 可执行假命令，包括真实子进程终止和并发；不会调用真实 `lp`、访问客户数据或生产服务。PHPStan 以 level 8、`--debug` 单进程运行，避免本地并行协调端口。`tools/consumer-check.php` 额外需要 zip 扩展（仅验证工具需要，运行库不需要）。CI 声明 macOS/Linux、PHP 8.2/8.3/8.4/8.5 矩阵，最新远端 CI 结果尚未核验；实际已执行的本地结果见 [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md)。
 
 当前 `license: proprietary` 是暂不授予开源许可的保守元数据。来源及依赖界限见 [PROVENANCE.md](PROVENANCE.md)、[LICENSE](LICENSE)、[SECURITY.md](SECURITY.md)。独立重新实现不自动解决权属。首次私有上传必须由父任务在本地报告后安排；公开仓库及 Packagist 需要另设明确发布检查关口，不能由单测或 CI 通过自动触发。

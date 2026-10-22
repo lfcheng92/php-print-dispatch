@@ -1,6 +1,6 @@
 # PrintDispatch
 
-> Composer/PHP/CLI now use PrintDispatch. The GitHub remote is still `lfcheng92/php-print-bridge`; the server-side repository rename remains pending. The local directory is `php-print-dispatch`.
+> Composer/PHP/CLI and the GitHub repository now use PrintDispatch / print-dispatch. The existing repository was renamed to [lfcheng92/php-print-dispatch](https://github.com/lfcheng92/php-print-dispatch), and origin is synchronized. It remains PRIVATE with its original commit history. The local directory is `php-print-dispatch`.
 
 [中文](README.md)
 
@@ -130,6 +130,6 @@ Before reconciling unknown, **stop all old workers and child processes, includin
 
 ## Verification and licensing
 
-Tests use temporary private SQLite state, FakeTransport and executable PHP fixtures, with real subprocess termination and concurrency. No system lp, production service or customer data is used. PHPStan level 8 runs with `--debug` to avoid parallel-coordination sockets. Consumer verification additionally needs ext-zip and disables the network/Packagist, inspects a Composer ZIP, installs a copied path dependency from the extracted archive, hides its source, then exercises the library and installed bin proxy. CI declares macOS/Linux with PHP 8.2–8.5 but has not been run remotely during this task. Actual local evidence is in [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md).
+Tests use temporary private SQLite state, FakeTransport and executable PHP fixtures, with real subprocess termination and concurrency. No system lp, production service or customer data is used. PHPStan level 8 runs with `--debug` to avoid parallel-coordination sockets. Consumer verification additionally needs ext-zip and disables the network/Packagist, inspects a Composer ZIP, installs a copied path dependency from the extracted archive, hides its source, then exercises the library and installed bin proxy. CI declares macOS/Linux with PHP 8.2–8.5; the latest remote CI result has not been verified. Actual local evidence is in [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md).
 
 `license: proprietary` conservatively grants no open-source license. See [PROVENANCE.md](PROVENANCE.md), [LICENSE](LICENSE), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md). A fresh implementation does not automatically settle ownership. Private upload is a later parent-task step after the local report. Public hosting and Packagist require a distinct explicit release review; passing tests never authorizes publication.
