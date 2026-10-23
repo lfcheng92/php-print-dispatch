@@ -2,7 +2,7 @@
     "name": "lfcheng92/print-dispatch",
     "description": "Framework-independent PHP print queue with conservative CUPS submission semantics.",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "keywords": ["printing", "cups", "sqlite", "queue"],
     "require": {
         "php": "^8.2",
@@ -23,5 +23,5 @@
         "check": ["@lint", "@analyse", "@test"]
     },
     "config": {"allow-plugins": false, "sort-packages": true},
-    "archive": {"exclude": ["/vendor", "/var", "/build", "/.git", "/.github", "/.phpstan", "/.gitignore", "/.gitattributes", "/composer.lock", "/phpstan.neon", "/tests", "/tools", "/LOCAL_VALIDATION.md", "/UPLOAD_CHECKLIST.md"]}
+    "archive": {"exclude": ["/vendor", "/var", "/build", "/.git", "/.github", "/.phpstan", "/.gitignore", "/.gitattributes", "/composer.lock", "/phpstan.neon", "/tests", "/tools"]}
 }

@@ -318,9 +318,16 @@ final class Queue
     public function documentPath(Job $job): string
     {
         self::validateId($job->id);
+        try {
+            PrintRequest::validateOptions($job->printer, $job->mediaType, $job->copies);
+        } catch (\InvalidArgumentException) {
+            throw new BridgeException('Stored request options are invalid.');
+        }
         $path = $this->spool . '/' . $job->id . '.data';
         PrivateFiles::assertFile($path);
-        if ($job->documentPurged || @filesize($path) !== $job->byteCount
+        if ($job->documentPurged || $job->byteCount < 1 || $job->byteCount > 104_857_600
+            || preg_match('/\A[a-f0-9]{64}\z/D', $job->contentHash) !== 1
+            || @filesize($path) !== $job->byteCount
             || !hash_equals($job->contentHash, (string) @hash_file('sha256', $path))) {
             throw new BridgeException('Spool integrity check failed.');
         }

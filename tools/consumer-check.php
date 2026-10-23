@@ -41,7 +41,7 @@ try {
     $archive = $base . '/archives/print-dispatch.zip';
     $zip = new ZipArchive();
     if ($zip->open($archive) !== true) { throw new RuntimeException('Cannot inspect source archive.'); }
-    $required = ['composer.json', 'src/Queue.php', 'bin/print-dispatch', 'README.md', 'README.en.md', 'SECURITY.md', 'LICENSE'];
+    $required = ['composer.json', 'src/Queue.php', 'bin/print-dispatch', 'README.md', 'README.en.md', 'SECURITY.md', 'LICENSE', 'PROVENANCE.md', 'TESTING.md'];
     foreach ($required as $entry) {
         if ($zip->locateName($entry) === false) { throw new RuntimeException('Missing archive entry: ' . $entry); }
     }
@@ -60,7 +60,7 @@ try {
     $source = $base . '/artifact-source'; mkdir($source, 0700); $zip->extractTo($source); $zip->close();
     $consumer = $base . '/consumer'; mkdir($consumer, 0700);
     file_put_contents($consumer . '/composer.json', json_encode([
-        'name'=>'print-dispatch-check/isolated-consumer', 'license'=>'proprietary',
+        'name'=>'print-dispatch-check/isolated-consumer', 'description'=>'Isolated copied-archive verification fixture.', 'license'=>'proprietary',
         'repositories'=>[
             ['type'=>'path','url'=>'../artifact-source','options'=>['symlink'=>false,'versions'=>['lfcheng92/print-dispatch'=>'dev-main']]],
             ['packagist.org'=>false],
@@ -70,6 +70,9 @@ try {
     ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
     run([...$composer,'install','--no-dev','--no-interaction','--no-plugins','--no-scripts','--prefer-dist'], $consumer, $environment);
     if (is_link($consumer . '/vendor/lfcheng92/print-dispatch')) { throw new RuntimeException('Consumer must copy, not symlink.'); }
+    run([...$composer,'validate','--strict','--no-plugins','--no-scripts'], $consumer, $environment);
+    run([...$composer,'dump-autoload','--optimize','--strict-psr','--strict-ambiguous','--no-dev','--no-plugins','--no-scripts'], $consumer, $environment);
+    run([...$composer,'check-platform-reqs','--no-dev'], $consumer, $environment);
     rename($source, $base . '/source-hidden');
     $verify = <<<'PHP'
 <?php
@@ -82,6 +85,21 @@ use Lfcheng\PrintDispatch\Status;
 use Lfcheng\PrintDispatch\Transport\FakeTransport;
 $file = (new ReflectionClass(Queue::class))->getFileName();
 if (!str_starts_with($file, __DIR__ . '/vendor/')) { throw new RuntimeException('Source directory dependency.'); }
+$classMap = require __DIR__ . '/vendor/composer/autoload_classmap.php';
+$types = 0;
+foreach ($classMap as $class => $path) {
+    if (!str_starts_with($class, 'Lfcheng\\PrintDispatch\\')) { continue; }
+    if (!class_exists($class) && !interface_exists($class) && !enum_exists($class) && !trait_exists($class)) {
+        throw new RuntimeException('Installed type cannot load: ' . $class);
+    }
+    $reflection = new ReflectionClass($class);
+    if ($reflection->getName() !== $class || !str_starts_with($reflection->getFileName(), __DIR__ . '/vendor/lfcheng92/print-dispatch/src/')) {
+        throw new RuntimeException('Installed type name or source mismatch.');
+    }
+    ++$types;
+}
+$sourceFiles = iterator_count(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/vendor/lfcheng92/print-dispatch/src', FilesystemIterator::SKIP_DOTS)));
+if ($types !== $sourceFiles || $types !== 22) { throw new RuntimeException('Runtime type inventory mismatch.'); }
 $q = new Queue(dirname(__DIR__) . '/library-state');
 $a = $q->enqueue('consumer-key', new PrintRequest('demo', "Synthetic consumer\n", 'text/plain'));
 if ($a->status !== Status::Received || $a->id !== $q->enqueue('consumer-key', new PrintRequest('demo', "Synthetic consumer\n", 'text/plain'))->id) { throw new RuntimeException('Enqueue/dedupe failed.'); }
@@ -91,7 +109,14 @@ if ($simulated?->status !== Status::Simulated || $simulated->systemJobId !== nul
 $purgeBlocked = false;
 try { $q->purgeDocument($a->id); } catch (\Lfcheng\PrintDispatch\Exception\BridgeException) { $purgeBlocked = true; }
 if (!$purgeBlocked || !is_file($q->documentPath($a))) { throw new RuntimeException('Simulated payload was not retained.'); }
-echo "Copied archive consumer library OK\n";
+$bad = $q->enqueue('corrupt-consumer-key', new PrintRequest('demo', "Synthetic metadata test\n", 'text/plain'));
+$db = new PDO('sqlite:' . dirname(__DIR__) . '/library-state/queue.sqlite');
+$statement = $db->prepare('UPDATE jobs SET copies=1000 WHERE id=?'); $statement->execute([$bad->id]);
+$fake = new FakeTransport(); $failed = (new Worker($q, $fake))->runOnce();
+if ($failed?->status !== Status::Failed || $failed->attempts !== 0 || $fake->submissions !== []) {
+    throw new RuntimeException('Installed metadata validation boundary failed.');
+}
+echo "Copied archive consumer library OK; runtime types: " . $types . "\n";
 PHP;
     file_put_contents($consumer . '/verify.php', $verify);
     echo run([PHP_BINARY, $consumer . '/verify.php'], $base, $environment);

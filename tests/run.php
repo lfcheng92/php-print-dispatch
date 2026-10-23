@@ -583,6 +583,105 @@ $s->test('CLI reports unavailable arguments without warnings when register_argc_
     $s->same("CLI arguments unavailable. Enable register_argc_argv.\n",$err);
 });
 
+
+$s->test('corrupt stored request options fail before the submission marker', function () use ($s): void {
+    foreach ([['copies', 0], ['copies', 1000], ['copies', -1], ['media_type', 'application/octet-stream'], ['printer', "demo\n"]] as [$column, $value]) {
+        $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('invalid-stored-options', request());
+        $db = new PDO('sqlite:' . $root . '/queue.sqlite');
+        $statement = $db->prepare('UPDATE jobs SET ' . $column . '=? WHERE id=?');
+        $statement->execute([$value, $job->id]);
+        $fake = new FakeTransport(); $result = (new Worker($q, $fake))->runOnce();
+        $s->same(Status::Failed, $result->status); $s->same(FailureCode::SpoolInvalid, $result->lastError);
+        $s->same(0, $result->attempts); $s->same(0, count($fake->submissions));
+        $s->same(null, (new Worker(new Queue($root), $fake))->runOnce());
+        $s->throws(BridgeException::class, fn () => $q->retry($job->id));
+    }
+});
+$s->test('CUPS rejects invalid low-level job options without executing its command', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('invalid-direct-options', request());
+    $path = $q->documentPath($job); $marker = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($marker, true) . ', "called"); echo "request id is demo-1 (1 file(s))\\n";');
+    $db = new PDO('sqlite:' . $root . '/queue.sqlite');
+    foreach ([['copies', 1000], ['media_type', "text/plain\n"]] as [$column, $value]) {
+        $db->exec("UPDATE jobs SET copies=1,media_type='text/plain'");
+        $statement = $db->prepare('UPDATE jobs SET ' . $column . '=?'); $statement->execute([$value]);
+        $result = (new CupsTransport(['demo'], $lp))->submit(new Submission($q->get($job->id), $path));
+        $s->same('not_submitted', $result->outcome); $s->same(FailureCode::InvalidRequest, $result->failure);
+        $s->same(false, $result->retryable); $s->same(false, file_exists($marker));
+    }
+});
+$s->test('receipt persistence failure leaves a non-replayable durable submission marker', function () use ($s): void {
+    $root = $s->path(); $clock = new TestClock(); $q = new Queue($root, clock: $clock);
+    $job = $q->enqueue('receipt-write-failure', request()); $calls = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($calls, true) . ', "call\\n", FILE_APPEND | LOCK_EX); echo "request id is demo-77 (1 file(s))\\n";');
+    $db = new PDO('sqlite:' . $root . '/queue.sqlite');
+    $db->exec("CREATE TRIGGER reject_receipt BEFORE UPDATE OF status ON jobs WHEN NEW.status='submitted' BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END");
+    $worker = new Worker($q, new CupsTransport(['demo'], $lp));
+    $s->throws(PDOException::class, fn () => $worker->runOnce());
+    $s->same(Status::Submitting, $q->get($job->id)->status); $s->same(1, $q->get($job->id)->attempts);
+    $s->same(null, $worker->runOnce());
+    $clock->value += 45;
+    $s->same(null, $worker->runOnce()); $s->same(Status::Unknown, $q->get($job->id)->status);
+    $s->same(false, $q->get($job->id)->retrySafe); $s->same("call\n", file_get_contents($calls));
+    $s->throws(BridgeException::class, fn () => $q->retry($job->id));
+    $db->exec('DROP TRIGGER reject_receipt');
+    $s->same(Status::Unknown, (new Queue($root))->get($job->id)->status);
+});
+$s->test('claim write failure rolls back before any adapter execution', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('claim-write-failure', request());
+    $db = new PDO('sqlite:' . $root . '/queue.sqlite');
+    $db->exec("CREATE TRIGGER reject_claim BEFORE UPDATE OF status ON jobs WHEN NEW.status='leased' BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END");
+    $fake = new FakeTransport(); $worker = new Worker($q, $fake);
+    $s->throws(PDOException::class, fn () => $worker->runOnce());
+    $s->same(Status::Received, $q->get($job->id)->status); $s->same(0, $q->get($job->id)->attempts);
+    $s->same(0, count($fake->submissions));
+    $db->exec('DROP TRIGGER reject_claim');
+    $s->same(Status::Simulated, $worker->runOnce()->status); $s->same(1, count($fake->submissions));
+});
+$s->test('old token cannot finish a manually reconciled and re-leased job', function () use ($s): void {
+    $clock = new TestClock(); $q = $s->queue($clock); $job = $q->enqueue('stale-after-reconciliation', request());
+    $old = $q->claim(5); $q->beginSubmission($old, 5); $clock->value += 5; $q->recover();
+    // Operator reconciliation assumes old workers have been stopped; this tests storage fencing only.
+    $q->resolveUnknown($job->id, false, 'SYNTHETIC-LOCAL-REVIEW'); $q->retry($job->id);
+    $new = $q->claim(5); $q->beginSubmission($new, 5);
+    $s->truth($new->token !== $old->token);
+    $s->throws(LeaseLost::class, fn () => $q->finish($old, TransportResult::submitted('demo-1')));
+    $s->same(Status::Submitting, $q->get($job->id)->status);
+    $s->same('demo-2', $q->finish($new, TransportResult::submitted('demo-2'))->systemJobId);
+    $s->same(2, $q->get($job->id)->attempts);
+});
+$s->test('concurrent first-open producers and CUPS fixture workers preserve every distinct job', function () use ($s): void {
+    $root = $s->path(); $start = $s->path(); $done = $s->path(); $calls = $s->path();
+    $lp = $s->script('file_put_contents(' . var_export($calls, true) . ', substr($argv[8], 15) . "\\n", FILE_APPEND | LOCK_EX); echo "request id is demo-1 (1 file(s))\\n";');
+    $common = 'require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . ';'
+        . '$deadline=microtime(true)+12; while(!file_exists(' . var_export($start, true) . ')){if(microtime(true)>$deadline){exit(8);} usleep(1000);}'
+        . '$q=new \\Lfcheng\\PrintDispatch\\Queue(' . var_export($root, true) . ');';
+    $producer = $s->script($common . 'for($i=0;$i<8;++$i){$q->enqueue("producer-".$argv[1]."-".$i,new \\Lfcheng\\PrintDispatch\\PrintRequest("demo","Synthetic concurrent document","text/plain"));}');
+    $worker = $s->script($common . '$w=new \\Lfcheng\\PrintDispatch\\Worker($q,new \\Lfcheng\\PrintDispatch\\Transport\\CupsTransport(["demo"],' . var_export($lp, true) . '));'
+        . 'while(microtime(true)<$deadline){$job=$w->runOnce(); if($job===null){if(file_exists(' . var_export($done, true) . ')){exit(0);} usleep(10000);}} exit(9);');
+    $producers = $workers = [];
+    for ($i=0; $i<3; ++$i) {
+        $process = proc_open([PHP_BINARY, $producer, (string)$i], [1=>['pipe','w'],2=>['pipe','w']], $pipes); $producers[]=[$process,$pipes];
+        $process = proc_open([PHP_BINARY, $worker], [1=>['pipe','w'],2=>['pipe','w']], $pipes); $workers[]=[$process,$pipes];
+    }
+    touch($start);
+    foreach ($producers as [$process,$pipes]) {
+        $out=stream_get_contents($pipes[1]); $err=stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
+        $s->same('', $err); $s->same('', $out); $s->same(0, proc_close($process));
+    }
+    touch($done);
+    foreach ($workers as [$process,$pipes]) {
+        $out=stream_get_contents($pipes[1]); $err=stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
+        $s->same('', $err); $s->same('', $out); $s->same(0, proc_close($process));
+    }
+    $db = new PDO('sqlite:' . $root . '/queue.sqlite');
+    $ids = $db->query('SELECT id FROM jobs ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
+    $printed = file($calls, FILE_IGNORE_NEW_LINES); sort($printed);
+    $s->same(24, count($ids)); $s->same($ids, $printed);
+    $s->same(24, (int)$db->query("SELECT count(*) FROM jobs WHERE status='submitted' AND attempts=1")->fetchColumn());
+    $s->same(24, count(glob($root . '/spool/*.data')));
+});
+
 $s->remove($s->base);
 echo sprintf("Tests: %d, assertions: %d, failures: %d\n", $s->tests, $s->assertions, $s->failures);
 exit($s->failures === 0 ? 0 : 1);

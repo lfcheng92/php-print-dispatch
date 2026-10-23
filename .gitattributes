@@ -8,7 +8,5 @@
 /tools export-ignore
 /composer.lock export-ignore
 /phpstan.neon export-ignore
-/LOCAL_VALIDATION.md export-ignore
-/UPLOAD_CHECKLIST.md export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore

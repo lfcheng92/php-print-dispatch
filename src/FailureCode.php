@@ -12,6 +12,7 @@ enum FailureCode: string
     case CommandFailed = 'command_failed';
     case UnrecognizedResponse = 'unrecognized_response';
     case SpoolInvalid = 'spool_invalid';
+    case InvalidRequest = 'invalid_request';
     case TransportException = 'transport_exception';
     case SafeRejection = 'safe_rejection';
     case PrinterNotAllowed = 'printer_not_allowed';

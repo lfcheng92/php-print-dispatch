@@ -1,12 +1,12 @@
 # PrintDispatch
 
-> Composer/PHP/CLI and the GitHub repository now use PrintDispatch / print-dispatch. The existing repository was renamed to [lfcheng92/php-print-dispatch](https://github.com/lfcheng92/php-print-dispatch), and origin is synchronized. It remains PRIVATE with its original commit history. The local directory is `php-print-dispatch`.
+[GitHub repository](https://github.com/lfcheng92/php-print-dispatch) · `lfcheng92/print-dispatch` · `Lfcheng\PrintDispatch\`
 
 [中文](README.md)
 
 `lfcheng92/print-dispatch` is a framework-independent PHP Composer library and CLI worker with a persistent SQLite queue, private local spool, business idempotency, lease recovery and conservative CUPS submission semantics. There are no runtime Composer dependencies, Node.js, Electron, HTTP listeners or persistent account tokens.
 
-**Local first version, unpublished.** The macOS/Linux CUPS adapter has only been exercised through isolated executable fixtures. Real hardware validation is pending. Windows is unsupported. `submitted` means scheduler acceptance; `physical_output` always remains `unverified`. End-to-end exactly-once delivery is not guaranteed.
+**First usable candidate; no stable tag or Packagist release.** The macOS/Linux CUPS adapter has only been exercised through isolated executable fixtures. Real hardware validation is pending. Windows is unsupported. `submitted` means scheduler acceptance; `physical_output` always remains `unverified`. End-to-end exactly-once delivery is not guaranteed.
 
 ## Requirements and installation
 
@@ -21,7 +21,7 @@ composer check
 php tools/consumer-check.php
 ```
 
-This package is not on a public registry. For a local consumer use:
+This package is not published on Packagist. For a local consumer use:
 
 ```json
 {
@@ -113,7 +113,7 @@ Queue claim/beginSubmission/finish/failBeforeSubmission/documentPath form the in
 
 SQLite BEGIN IMMEDIATE serializes producers/claims, and random lease tokens fence stale state writes. Attempts increment at the durable submitting marker. There is no heartbeat; the lease must exceed the adapter's hard runtime bound by at least five seconds, including CUPS termination grace. Host suspension, clock changes and delayed storage can conservatively produce unknown.
 
-Only adapters that can prove no submission occurred may return notSubmitted. CUPS nonzero exits, timeouts, excess output, unexpected receipts and adapter exceptions are unknown. Initial maxAttempts is 1–10, default 3, with 10/20/40/80/160/300-second capped backoff. Missing executable and disallowed printer require configuration repair plus explicit retry. Missing/tampered/nonprivate payload fails before invocation and cannot be retried.
+Only adapters that can prove no submission occurred may return notSubmitted. CUPS nonzero exits, timeouts, excess output, unexpected receipts and adapter exceptions are unknown. Initial maxAttempts is 1–10, default 3, with 10/20/40/80/160/300-second capped backoff. Missing executable and disallowed printer require configuration repair plus explicit retry. Missing/tampered/nonprivate payload and invalid persisted printer/MIME/copy options fail as spool_invalid before the submission marker and cannot be retried. The low-level CUPS entry point independently rejects invalid options as non-retryable invalid_request. This does not authenticate SQLite metadata or protect against hostile edits.
 
 An early private commit recorded fake receipts as submitted. Old rows are not automatically reinterpreted or replayed. If FakeTransport was used with that version, stop workers and independently reconcile affected jobs before cleanup; old fake-* identifiers do not prove scheduler acceptance. A real CUPS destination can itself be named fake, so prefix-only migration would be unsafe. FakeTransport now refuses injected submitted outcomes and returns only a simulation receipt or explicit failure/unknown fixtures.
 
@@ -130,6 +130,6 @@ Before reconciling unknown, **stop all old workers and child processes, includin
 
 ## Verification and licensing
 
-Tests use temporary private SQLite state, FakeTransport and executable PHP fixtures, with real subprocess termination and concurrency. No system lp, production service or customer data is used. PHPStan level 8 runs with `--debug` to avoid parallel-coordination sockets. Consumer verification additionally needs ext-zip and disables the network/Packagist, inspects a Composer ZIP, installs a copied path dependency from the extracted archive, hides its source, then exercises the library and installed bin proxy. CI declares macOS/Linux with PHP 8.2–8.5; the latest remote CI result has not been verified. Actual local evidence is in [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md).
+Tests use temporary private SQLite state, FakeTransport and executable PHP fixtures, with real subprocess termination and concurrency. No system lp, production service or customer data is used. PHPStan level 8 runs with `--debug` to avoid parallel-coordination sockets. Consumer verification additionally needs ext-zip and disables the network/Packagist, inspects a Composer ZIP, installs a copied path dependency from the extracted archive, hides its source, then exercises the library and installed bin proxy. CI declares macOS/Linux with PHP 8.2–8.5; the latest remote CI result has not been verified. Reproducible commands, coverage and limits are in [TESTING.md](TESTING.md).
 
-`license: proprietary` conservatively grants no open-source license. See [PROVENANCE.md](PROVENANCE.md), [LICENSE](LICENSE), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md). A fresh implementation does not automatically settle ownership. Private upload is a later parent-task step after the local report. Public hosting and Packagist require a distinct explicit release review; passing tests never authorizes publication.
+The independently authored package is licensed under MIT; see [LICENSE](LICENSE), [PROVENANCE.md](PROVENANCE.md), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md). A fresh implementation does not automatically settle ownership. External runtimes, drivers and documents retain their own terms. Repository publication and Packagist release are separately approved operations; passing tests does not trigger either.

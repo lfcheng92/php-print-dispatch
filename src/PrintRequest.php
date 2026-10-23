@@ -11,15 +11,9 @@ final readonly class PrintRequest
         public string $mediaType = 'application/pdf',
         public int $copies = 1,
     ) {
-        self::validatePrinter($printer);
-        if ($copies < 1 || $copies > 99) {
-            throw new \InvalidArgumentException('Copies must be between 1 and 99.');
-        }
+        self::validateOptions($printer, $mediaType, $copies);
         if ($bytes === '') {
             throw new \InvalidArgumentException('Document must not be empty.');
-        }
-        if (!in_array($mediaType, ['application/pdf', 'text/plain'], true)) {
-            throw new \InvalidArgumentException('Only PDF and UTF-8 plain text are supported.');
         }
         if ($mediaType === 'application/pdf' && !str_starts_with($bytes, '%PDF-')) {
             throw new \InvalidArgumentException('PDF header is missing.');
@@ -27,6 +21,18 @@ final readonly class PrintRequest
         if ($mediaType === 'text/plain'
             && (preg_match('//u', $bytes) !== 1 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $bytes) === 1)) {
             throw new \InvalidArgumentException('Text must be valid UTF-8 without control codes.');
+        }
+    }
+
+    /** Recheck persisted or adapter-supplied metadata before any external side effect. */
+    public static function validateOptions(string $printer, string $mediaType, int $copies): void
+    {
+        self::validatePrinter($printer);
+        if ($copies < 1 || $copies > 99) {
+            throw new \InvalidArgumentException('Copies must be between 1 and 99.');
+        }
+        if (!in_array($mediaType, ['application/pdf', 'text/plain'], true)) {
+            throw new \InvalidArgumentException('Only PDF and UTF-8 plain text are supported.');
         }
     }
 

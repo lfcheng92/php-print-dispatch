@@ -1,12 +1,12 @@
 # PrintDispatch · 纯 PHP 打印代理
 
-> Composer/PHP/CLI 与 GitHub 仓库现已统一为 PrintDispatch / print-dispatch。现有仓库已更名为 [lfcheng92/php-print-dispatch](https://github.com/lfcheng92/php-print-dispatch)，origin 已同步；仓库保持 PRIVATE，原提交历史保留。本地目录为 `php-print-dispatch`。
+[GitHub 仓库](https://github.com/lfcheng92/php-print-dispatch) · `lfcheng92/print-dispatch` · `Lfcheng\PrintDispatch\`
 
 [English](README.en.md)
 
 `lfcheng92/print-dispatch` 是框架无关的 Composer 库及 CLI worker。用本地 SQLite 和受控 spool 保存任务，提供业务幂等、状态查询、租约恢复及保守的 CUPS 提交语义。运行时没有第三方 PHP 包，不依赖 Node.js、Electron、Web 服务或常驻账户令牌。
 
-当前为**本地首版，尚未发布**。macOS/Linux 的 CUPS 适配器仅经过隔离假命令验证，尚未做真实打印机验证；不承诺 Windows 支持。`submitted` 仅表示操作系统队列接受，物理出纸始终为 `unverified`。不能保证端到端 exactly-once。
+当前为**首个可用候选版，尚无稳定版本或 Packagist 发布**。macOS/Linux 的 CUPS 适配器仅经过隔离假命令验证，尚未做真实打印机验证；不承诺 Windows 支持。`submitted` 仅表示操作系统队列接受，物理出纸始终为 `unverified`。不能保证端到端 exactly-once。
 
 ## 环境与安装
 
@@ -24,7 +24,7 @@ composer check
 php tools/consumer-check.php
 ```
 
-尚无公共安装源。独立消费者可在自己的 `composer.json` 配置本地 path 仓库：
+尚未发布 Packagist。独立消费者可在自己的 `composer.json` 配置本地 path 仓库：
 
 ```json
 {
@@ -126,7 +126,7 @@ $snapshot = $queue->get($job->id);
 
 SQLite `BEGIN IMMEDIATE` 保证同机领取及幂等检查互斥；随机 lease token 防止旧 worker 覆盖新状态。提交尝试在写入 `submitting` 时计数，状态机不会根据 CUPS 接收推断物理成功。租约须比适配器最长运行时间至少长 5 秒；CUPS 的进程终止宽限也计入运行上限。不做心跳续租，主机休眠、暂停、向前跳时钟或超长 DB 等待都可能使结果保守地变为 unknown。
 
-只有适配器明确证明未启动/未提交才可自动重试。CUPS 非零退出、超时、输出超限、格式异常，或适配器抛异常，一律 unknown。初始 `maxAttempts` 为 1–10；安全失败使用 10/20/40/80/160/300 秒封顶退避。缺少可执行文件和白名单不匹配不自动重试；修正配置后可显式 retry。文档丢失、被篡改或不再私有时在执行前失败且禁止 retry。
+只有适配器明确证明未启动/未提交才可自动重试。CUPS 非零退出、超时、输出超限、格式异常，或适配器抛异常，一律 unknown。初始 `maxAttempts` 为 1–10；安全失败使用 10/20/40/80/160/300 秒封顶退避。缺少可执行文件和白名单不匹配不自动重试；修正配置后可显式 retry。文档丢失、被篡改或不再私有，以及持久化打印机名、MIME、份数越界时，都会在提交标记前以 `spool_invalid` 失败且禁止 retry。CUPS 低层入口也拒绝不合法参数，返回不可自动重试的 `invalid_request`。这不是对 SQLite 元数据的签名或敌对修改防护。
 
 早期私有提交曾将 fake 回执写为 submitted；旧状态不会被自动重解释或重放。若曾用旧版运行 FakeTransport，先停 worker 并独立核查受影响任务，不能把旧 `fake-*` 标识当作系统提交证明，也不能直接清除其文档。旧 CUPS 打印机也可能恰好名为 fake，因此不能只根据该前缀自动迁移。
 
@@ -143,6 +143,6 @@ SQLite `BEGIN IMMEDIATE` 保证同机领取及幂等检查互斥；随机 lease 
 
 ## 验证与发布边界
 
-测试使用随机私有临时目录、SQLite、FakeTransport 和临时 PHP 可执行假命令，包括真实子进程终止和并发；不会调用真实 `lp`、访问客户数据或生产服务。PHPStan 以 level 8、`--debug` 单进程运行，避免本地并行协调端口。`tools/consumer-check.php` 额外需要 zip 扩展（仅验证工具需要，运行库不需要）。CI 声明 macOS/Linux、PHP 8.2/8.3/8.4/8.5 矩阵，最新远端 CI 结果尚未核验；实际已执行的本地结果见 [LOCAL_VALIDATION.md](LOCAL_VALIDATION.md)。
+测试使用随机私有临时目录、SQLite、FakeTransport 和临时 PHP 可执行假命令，包括真实子进程终止和并发；不会调用真实 `lp`、访问客户数据或生产服务。PHPStan 以 level 8、`--debug` 单进程运行，避免本地并行协调端口。`tools/consumer-check.php` 额外需要 zip 扩展（仅验证工具需要，运行库不需要）。CI 声明 macOS/Linux、PHP 8.2/8.3/8.4/8.5 矩阵，最新远端 CI 结果尚未核验；可复现命令、覆盖范围和已知限制见 [TESTING.md](TESTING.md)。
 
-当前 `license: proprietary` 是暂不授予开源许可的保守元数据。来源及依赖界限见 [PROVENANCE.md](PROVENANCE.md)、[LICENSE](LICENSE)、[SECURITY.md](SECURITY.md)。独立重新实现不自动解决权属。首次私有上传必须由父任务在本地报告后安排；公开仓库及 Packagist 需要另设明确发布检查关口，不能由单测或 CI 通过自动触发。
+本包自主编写部分采用 MIT，见 [LICENSE](LICENSE)。来源、外部依赖和权属边界见 [PROVENANCE.md](PROVENANCE.md) 与 [SECURITY.md](SECURITY.md)。独立重新实现不自动解决权属；MIT 不改变外部运行时、驱动或文档的权利。公开仓库与 Packagist 发布是分别批准的操作，不由测试或 CI 自动触发。

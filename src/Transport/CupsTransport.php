@@ -36,6 +36,11 @@ final class CupsTransport implements Transport
     public function submit(Submission $submission): TransportResult
     {
         $job = $submission->job;
+        try {
+            PrintRequest::validateOptions($job->printer, $job->mediaType, $job->copies);
+        } catch (\InvalidArgumentException) {
+            return TransportResult::notSubmitted(FailureCode::InvalidRequest);
+        }
         if (!in_array($job->printer, $this->allowedPrinters, true)) {
             return TransportResult::notSubmitted(FailureCode::PrinterNotAllowed);
         }
