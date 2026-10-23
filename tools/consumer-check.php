@@ -121,7 +121,16 @@ PHP;
     file_put_contents($consumer . '/verify.php', $verify);
     echo run([PHP_BINARY, $consumer . '/verify.php'], $base, $environment);
     $cli = $consumer . '/vendor/bin/print-dispatch';
-    run([PHP_BINARY, $cli, 'help'], $base, $environment);
+    $help = run([PHP_BINARY, $cli, 'help'], $base, $environment);
+    $withoutSetting = run([PHP_BINARY, '-d', 'register_argc_argv=0', $cli, 'help'], $base, $environment,
+        '', PHP_VERSION_ID >= 80500 ? 0 : 1);
+    if ($withoutSetting !== (PHP_VERSION_ID >= 80500 ? $help : '')) {
+        throw new RuntimeException('Installed CLI argument configuration mismatch.');
+    }
+    $missingArguments = 'unset($argv); require ' . var_export($cli, true) . ';';
+    if (run([PHP_BINARY, '-r', $missingArguments], $base, $environment, '', 1) !== '') {
+        throw new RuntimeException('Installed CLI did not reject missing arguments cleanly.');
+    }
     $out = run([PHP_BINARY,$cli,'submit','--state',$base.'/cli-state','--key','cli-consumer','--printer','demo','--mime','text/plain'], $base, $environment, "Synthetic installed CLI\n");
     $submitted = json_decode($out, true, flags: JSON_THROW_ON_ERROR);
     if ($submitted['status'] !== 'received') { throw new RuntimeException('Installed CLI submit failed.'); }

@@ -577,10 +577,36 @@ $s->test('FakeTransport refuses forged submitted outcomes and simulation require
     $s->truth($q->purgeDocument($job->id)->documentPurged);
 });
 
-$s->test('CLI reports unavailable arguments without warnings when register_argc_argv is off', function () use ($s): void {
-    [$exit,$out,$err] = $s->command([PHP_BINARY,'-d','register_argc_argv=0',dirname(__DIR__).'/bin/print-dispatch','help']);
-    $s->same(1,$exit); $s->same('',$out);
-    $s->same("CLI arguments unavailable. Enable register_argc_argv.\n",$err);
+$s->test('CLI honors PHP argument availability with register_argc_argv on and off', function () use ($s): void {
+    $cli = dirname(__DIR__) . '/bin/print-dispatch';
+    [$exit, $help, $err] = $s->command([PHP_BINARY, '-d', 'register_argc_argv=1', $cli, 'help']);
+    $s->same(0, $exit); $s->truth(str_starts_with($help, 'print-dispatch: init |')); $s->same('', $err);
+    [$exit, $out, $err] = $s->command([PHP_BINARY, '-d', 'register_argc_argv=0', $cli, 'help']);
+    // PHP 8.5 always builds CLI argv; PHP 8.2-8.4 allow this setting to disable it.
+    if (PHP_VERSION_ID >= 80500) {
+        $s->same(0, $exit); $s->same($help, $out); $s->same('', $err);
+    } else {
+        $s->same(1, $exit); $s->same('', $out);
+        $s->same("CLI arguments unavailable or invalid.\n", $err);
+    }
+});
+$s->test('CLI missing or invalid arguments fail without claiming queued work', function () use ($s): void {
+    $root = $s->path(); $q = new Queue($root); $job = $q->enqueue('missing-cli-arguments', request());
+    $cli = dirname(__DIR__) . '/bin/print-dispatch';
+    $arguments = [$cli, 'work', '--state', $root, '--once', '--transport', 'fake'];
+    foreach (['unset($argv);', '$argv = null;', '$argv = false;', '$argv = "help";', '$argv = [];', '$argv = [1 => "help"];', '$argv = ["bin", 1];'] as $invalidate) {
+        $code = '$argv = ' . var_export($arguments, true) . ';' . $invalidate . 'require ' . var_export($cli, true) . ';';
+        [$exit, $out, $err] = $s->command([PHP_BINARY, '-r', $code]);
+        $s->same(1, $exit); $s->same('', $out); $s->same("CLI arguments unavailable or invalid.\n", $err);
+        $s->same(Status::Received, $q->get($job->id)->status); $s->same(0, $q->get($job->id)->attempts);
+    }
+});
+$s->test('CLI accepts available arguments independently of the INI setting', function () use ($s): void {
+    $cli = dirname(__DIR__) . '/bin/print-dispatch';
+    // Supply the capability explicitly on every supported runtime; this does not emulate a PHP 8.5 runtime.
+    $code = '$argv = ' . var_export([$cli, 'help'], true) . ';require ' . var_export($cli, true) . ';';
+    [$exit, $out, $err] = $s->command([PHP_BINARY, '-d', 'register_argc_argv=0', '-r', $code]);
+    $s->same(0, $exit); $s->truth(str_starts_with($out, 'print-dispatch: init |')); $s->same('', $err);
 });
 
 

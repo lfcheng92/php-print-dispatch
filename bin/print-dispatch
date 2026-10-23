@@ -9,8 +9,12 @@ if (!is_string($autoload) || !is_file($autoload)) {
     exit(1);
 }
 require $autoload;
-if (!isset($argv)) {
-    fwrite(STDERR, "CLI arguments unavailable. Enable register_argc_argv.\n");
+// Read this scope: Composer proxies include the entry point, and callers can replace argv.
+$input = get_defined_vars()['argv'] ?? null;
+$arguments = is_array($input) ? array_values(array_filter($input, 'is_string')) : [];
+// PHP 8.5 CLI supplies argv even when register_argc_argv=0. Check the actual input.
+if ($arguments === [] || $arguments !== $input) {
+    fwrite(STDERR, "CLI arguments unavailable or invalid.\n");
     exit(1);
 }
-exit(\Lfcheng\PrintDispatch\Console::run($argv));
+exit(\Lfcheng\PrintDispatch\Console::run($arguments));

@@ -2,6 +2,8 @@
 
 ## Unreleased — public preparation review
 
+- Correct CLI argument regression expectations for PHP 8.5, which always supplies CLI arguments regardless of register_argc_argv. Preserve deterministic missing-argument rejection, reject malformed argument lists without warnings or an uncaught TypeError, and cover the installed Composer binary.
+
 - Revalidate persisted print options before submission; fail invalid stored requests without invoking a transport. Independently reject invalid low-level CUPS options.
 - Add failure injection for receipt/claim persistence, stale-token reconciliation and concurrent first-open producers with isolated CUPS fixture workers.
 - Select MIT for independently authored package code; preserve external dependency and runtime license boundaries.
